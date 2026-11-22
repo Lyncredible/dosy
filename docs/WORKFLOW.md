@@ -52,13 +52,10 @@ author rebasing onto `origin/main`.
 
 - `rust-toolchain.toml` pins `stable` with rustfmt + clippy; CI uses it on
   windows-latest, ubuntu-latest and macos-latest.
-- This Windows dev machine has no MSVC; use the GNU toolchain. Cargo lives in
-  `%USERPROFILE%\.cargo\bin` and may be missing from `PATH` in new shells:
+- Windows dev machine: default `stable-x86_64-pc-windows-msvc` toolchain.
+  Cargo lives in `%USERPROFILE%\.cargo\bin` and may be missing from `PATH`
+  in new shells; prepend it:
   - PowerShell: `$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"`
   - bash: `export PATH="$USERPROFILE/.cargo/bin:$PATH"`
-- Because `rust-toolchain.toml` says `stable`, rustup resolves it with the
-  default host. If `rustup show active-toolchain` reports `...-msvc`, run
-  once: `rustup set default-host x86_64-pc-windows-gnu` (or set
-  `RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu`).
 - Linux needs system packages once windowing/audio land (see the comment in
   `.github/workflows/ci.yml`).
