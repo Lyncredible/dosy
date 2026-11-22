@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/Lyncredible/dosy"
+
+[workspace.dependencies]
+dosy-core = { path = "crates/dosy-core" }
+dosy-vfs = { path = "crates/dosy-vfs" }
+dosy-config = { path = "crates/dosy-config" }
+dosy-render = { path = "crates/dosy-render" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+# The CPU interpreter is unusably slow at opt-level 0.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

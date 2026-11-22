@@ -1,0 +1,14 @@
+[package]
+name = "dosy-render"
+description = "GPU presenter for dosy frames (wgpu)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+dosy-core.workspace = true
+
+[lints]
+workspace = true

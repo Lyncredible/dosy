@@ -1,0 +1,17 @@
+[package]
+name = "dosy"
+description = "GPU-rendered MS-DOS emulator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+dosy-core.workspace = true
+dosy-vfs.workspace = true
+dosy-config.workspace = true
+dosy-render.workspace = true
+
+[lints]
+workspace = true
