@@ -263,11 +263,11 @@ mod tests {
 
     #[test]
     fn paths_parse_and_resolve_dots() {
-        let p = DosPath::parse("\\games\\.\\x\\..\\doom\\doom.exe").unwrap();
-        assert_eq!(p.to_string(), "\\GAMES\\DOOM\\DOOM.EXE");
+        let p = DosPath::parse("\\apps\\.\\x\\..\\tool\\tool.exe").unwrap();
+        assert_eq!(p.to_string(), "\\APPS\\TOOL\\TOOL.EXE");
         assert_eq!(p.components().len(), 3);
-        assert_eq!(p.file_name(), Some(&n("DOOM.EXE")));
-        assert_eq!(p.parent().unwrap().to_string(), "\\GAMES\\DOOM");
+        assert_eq!(p.file_name(), Some(&n("TOOL.EXE")));
+        assert_eq!(p.parent().unwrap().to_string(), "\\APPS\\TOOL");
         assert_eq!(
             DosPath::parse("a/b").unwrap(),
             DosPath::parse("\\A\\B\\").unwrap()
@@ -279,8 +279,8 @@ mod tests {
         assert_eq!(DosPath::parse("\\.."), Err(DosError::PathNotFound));
         assert_eq!(DosPath::parse("A\\..\\.."), Err(DosError::PathNotFound));
         assert_eq!(DosPath::parse("C:\\X"), Err(DosError::PathNotFound));
-        assert!(p.starts_with(&DosPath::parse("GAMES").unwrap()));
-        assert!(!p.starts_with(&DosPath::parse("GAME").unwrap()));
+        assert!(p.starts_with(&DosPath::parse("APPS").unwrap()));
+        assert!(!p.starts_with(&DosPath::parse("APP").unwrap()));
     }
 
     #[test]

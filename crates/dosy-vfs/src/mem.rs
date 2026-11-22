@@ -434,30 +434,30 @@ mod tests {
     #[test]
     fn crud() {
         let mut d = MemDrive::with_label("TEST");
-        d.mkdir(&p("\\GAMES")).unwrap();
-        let mut f = d.create(&p("\\games\\a.txt"), Attr::NONE).unwrap();
+        d.mkdir(&p("\\APPS")).unwrap();
+        let mut f = d.create(&p("\\apps\\a.txt"), Attr::NONE).unwrap();
         assert_eq!(f.write(b"hello").unwrap(), 5);
         assert_eq!(read_all(&mut *f), b"hello");
         drop(f);
-        let e = d.stat(&p("GAMES\\A.TXT")).unwrap();
+        let e = d.stat(&p("APPS\\A.TXT")).unwrap();
         assert_eq!((e.size, e.attr), (5, Attr::ARCHIVE));
-        assert!(d.stat(&p("GAMES")).unwrap().is_dir());
-        d.add_file("\\GAMES\\B.EXE", b"MZ");
-        assert_eq!(names(&mut d, "GAMES"), ["A.TXT", "B.EXE"]);
-        assert_eq!(names(&mut d, "\\"), ["GAMES"]);
+        assert!(d.stat(&p("APPS")).unwrap().is_dir());
+        d.add_file("\\APPS\\B.EXE", b"MZ");
+        assert_eq!(names(&mut d, "APPS"), ["A.TXT", "B.EXE"]);
+        assert_eq!(names(&mut d, "\\"), ["APPS"]);
 
         // Opened handles share contents; create truncates.
-        let mut r = d.open(&p("GAMES\\A.TXT"), OpenMode::Read).unwrap();
-        let mut c = d.create(&p("GAMES\\A.TXT"), Attr::NONE).unwrap();
+        let mut r = d.open(&p("APPS\\A.TXT"), OpenMode::Read).unwrap();
+        let mut c = d.create(&p("APPS\\A.TXT"), Attr::NONE).unwrap();
         c.write(b"x").unwrap();
         assert_eq!(read_all(&mut *r), b"x");
         assert_eq!(r.write(b"y"), Err(DosError::AccessDenied));
 
-        d.remove(&p("GAMES\\A.TXT")).unwrap();
-        assert_eq!(d.stat(&p("GAMES\\A.TXT")), Err(DosError::FileNotFound));
-        assert_eq!(d.rmdir(&p("GAMES")), Err(DosError::AccessDenied));
-        d.remove(&p("GAMES\\B.EXE")).unwrap();
-        d.rmdir(&p("GAMES")).unwrap();
+        d.remove(&p("APPS\\A.TXT")).unwrap();
+        assert_eq!(d.stat(&p("APPS\\A.TXT")), Err(DosError::FileNotFound));
+        assert_eq!(d.rmdir(&p("APPS")), Err(DosError::AccessDenied));
+        d.remove(&p("APPS\\B.EXE")).unwrap();
+        d.rmdir(&p("APPS")).unwrap();
         assert!(names(&mut d, "\\").is_empty());
         assert_eq!(d.info().label, "TEST");
         assert_eq!(d.info().free_bytes, d.info().total_bytes);
