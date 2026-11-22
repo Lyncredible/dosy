@@ -5,6 +5,7 @@
 
 pub mod audio;
 pub mod bus;
+pub mod hle;
 pub mod video;
 
 /// Drive abstraction used by the DOS kernel.

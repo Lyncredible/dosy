@@ -47,30 +47,76 @@ pub trait Bus {
     }
 }
 
+/// Simple bus for tests: flat RAM covering 1 MiB + HMA (no A20 wrap, no MMIO),
+/// scripted port inputs and a log of port outputs.
+#[derive(Clone, Debug)]
+pub struct FlatBus {
+    pub mem: Vec<u8>,
+    /// Value returned by `io_in8(port)`; unlisted ports read `0xFF`.
+    pub io_in: std::collections::HashMap<u16, u8>,
+    /// Every `io_out8` in order.
+    pub io_out: Vec<(u16, u8)>,
+}
+
+impl FlatBus {
+    /// Size of the RAM: 1 MiB plus the high memory area.
+    pub const SIZE: usize = 0x10_FFF0;
+
+    pub fn new() -> Self {
+        Self {
+            mem: vec![0; Self::SIZE],
+            io_in: Default::default(),
+            io_out: Vec::new(),
+        }
+    }
+
+    /// Copy `bytes` into memory at `addr`.
+    pub fn load(&mut self, addr: Addr, bytes: &[u8]) {
+        let a = addr as usize;
+        self.mem[a..a + bytes.len()].copy_from_slice(bytes);
+    }
+}
+
+impl Default for FlatBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Bus for FlatBus {
+    fn read8(&mut self, addr: Addr) -> u8 {
+        self.mem.get(addr as usize).copied().unwrap_or(0xFF)
+    }
+    fn write8(&mut self, addr: Addr, val: u8) {
+        if let Some(b) = self.mem.get_mut(addr as usize) {
+            *b = val;
+        }
+    }
+    fn io_in8(&mut self, port: u16) -> u8 {
+        self.io_in.get(&port).copied().unwrap_or(0xFF)
+    }
+    fn io_out8(&mut self, port: u16, val: u8) {
+        self.io_out.push((port, val));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    struct Flat {
-        mem: Vec<u8>,
-    }
-
-    impl Bus for Flat {
-        fn read8(&mut self, addr: Addr) -> u8 {
-            self.mem[addr as usize]
-        }
-        fn write8(&mut self, addr: Addr, val: u8) {
-            self.mem[addr as usize] = val;
-        }
-        fn io_in8(&mut self, _port: u16) -> u8 {
-            0xFF
-        }
-        fn io_out8(&mut self, _port: u16, _val: u8) {}
+    #[test]
+    fn flat_bus_ports_are_scripted_and_logged() {
+        let mut bus = FlatBus::new();
+        bus.io_in.insert(0x60, 0x1E);
+        assert_eq!(bus.io_in8(0x60), 0x1E);
+        assert_eq!(bus.io_in8(0x61), 0xFF);
+        bus.io_out16(0x20, 0x1220);
+        assert_eq!(bus.io_out, vec![(0x20, 0x20), (0x21, 0x12)]);
     }
 
     #[test]
     fn default_wide_accessors_are_little_endian() {
-        let mut bus = Flat { mem: vec![0; 16] };
+        let mut bus = FlatBus::new();
         bus.write32(linear(0, 4), 0x1234_5678);
         assert_eq!(bus.read8(4), 0x78);
         assert_eq!(bus.read16(6), 0x1234);
