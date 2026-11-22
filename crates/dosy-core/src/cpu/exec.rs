@@ -1,10 +1,12 @@
 //! `Cpu::step`: prefix loop and the opcode dispatch table.
 //!
-//! One `match` arm per opcode (or opcode range). ALU opcodes (007) and 386
-//! extensions (025) slot in as new arms; anything unhandled faults.
+//! One `match` arm per opcode (or opcode range); bulky groups call helpers
+//! in `ops.rs`. 386 extensions (025) slot in as new arms; anything unhandled
+//! faults.
 
+use super::alu;
 use super::flags::{self, AF, CF, DF, IF, OF, PF, SF, ZF};
-use super::regs::{AX, CX, Seg};
+use super::regs::{AX, BX, CX, DX, Seg};
 use super::{Cpu, CpuFault, Flags, Prefixes, Rep, Rm, Step};
 use crate::bus::Bus;
 use crate::hle::HleId;
@@ -346,18 +348,35 @@ impl Cpu {
             }
 
             // --- Groups ---
-            // FE /0, /1 (INC/DEC r/m8) arrive with the ALU (007).
             0xFE => {
-                if self.fetch8(bus) != 0x38 {
-                    return None;
+                let b = self.fetch8(bus);
+                if b == 0x38 {
+                    let id = self.fetch16(bus);
+                    return Some(Step::Callback(HleId(id)));
                 }
-                let id = self.fetch16(bus);
-                return Some(Step::Callback(HleId(id)));
+                let m = self.decode_modrm_byte(bus, pfx, b);
+                let a = self.read_rm8(bus, m.rm);
+                let (r, f) = match m.reg {
+                    0 => alu::inc8(a, self.flags),
+                    1 => alu::dec8(a, self.flags),
+                    _ => return None,
+                };
+                self.flags = f;
+                self.write_rm8(bus, m.rm, r);
             }
-            // FF /0, /1 (INC/DEC r/m16) arrive with the ALU (007).
             0xFF => {
                 let m = self.decode_modrm(bus, pfx);
                 match m.reg {
+                    0 | 1 => {
+                        let a = self.read_rm16(bus, m.rm);
+                        let (r, f) = if m.reg == 0 {
+                            alu::inc16(a, self.flags)
+                        } else {
+                            alu::dec16(a, self.flags)
+                        };
+                        self.flags = f;
+                        self.write_rm16(bus, m.rm, r);
+                    }
                     2 => {
                         let t = self.read_rm16(bus, m.rm);
                         self.push16(bus, self.ip as u16);
@@ -382,6 +401,204 @@ impl Cpu {
                     }
                     _ => return None,
                 }
+            }
+
+            // --- ALU ---
+            // 00..3F with low 3 bits 0..5: r/m8,r8 | r/m16,r16 | r8,r/m8 |
+            // r16,r/m16 | AL,imm8 | AX,imm16; kind = op >> 3.
+            0x00..=0x3F if op & 7 < 6 => {
+                let kind = (op >> 3) as usize;
+                match op & 7 {
+                    0 => {
+                        let m = self.decode_modrm(bus, pfx);
+                        let (a, b) = (self.read_rm8(bus, m.rm), self.regs.get8(m.reg));
+                        if let Some(r) = self.alu8(kind, a, b) {
+                            self.write_rm8(bus, m.rm, r);
+                        }
+                    }
+                    1 => {
+                        let m = self.decode_modrm(bus, pfx);
+                        let (a, b) = (self.read_rm16(bus, m.rm), self.regs.get16(m.reg));
+                        if let Some(r) = self.alu16(kind, a, b) {
+                            self.write_rm16(bus, m.rm, r);
+                        }
+                    }
+                    2 => {
+                        let m = self.decode_modrm(bus, pfx);
+                        let (a, b) = (self.regs.get8(m.reg), self.read_rm8(bus, m.rm));
+                        if let Some(r) = self.alu8(kind, a, b) {
+                            self.regs.set8(m.reg, r);
+                        }
+                    }
+                    3 => {
+                        let m = self.decode_modrm(bus, pfx);
+                        let (a, b) = (self.regs.get16(m.reg), self.read_rm16(bus, m.rm));
+                        if let Some(r) = self.alu16(kind, a, b) {
+                            self.regs.set16(m.reg, r);
+                        }
+                    }
+                    4 => {
+                        let b = self.fetch8(bus);
+                        if let Some(r) = self.alu8(kind, self.regs.al(), b) {
+                            self.regs.set_al(r);
+                        }
+                    }
+                    _ => {
+                        let b = self.fetch16(bus);
+                        if let Some(r) = self.alu16(kind, self.regs.ax(), b) {
+                            self.regs.set_ax(r);
+                        }
+                    }
+                }
+            }
+            // 82 is an 8086 alias of 80; 83 sign-extends imm8.
+            0x80..=0x83 => {
+                let m = self.decode_modrm(bus, pfx);
+                if op & 1 == 0 {
+                    let a = self.read_rm8(bus, m.rm);
+                    let b = self.fetch8(bus);
+                    if let Some(r) = self.alu8(m.reg, a, b) {
+                        self.write_rm8(bus, m.rm, r);
+                    }
+                } else {
+                    let a = self.read_rm16(bus, m.rm);
+                    let b = if op == 0x83 {
+                        self.fetch8(bus) as i8 as u16
+                    } else {
+                        self.fetch16(bus)
+                    };
+                    if let Some(r) = self.alu16(m.reg, a, b) {
+                        self.write_rm16(bus, m.rm, r);
+                    }
+                }
+            }
+            0x84 => {
+                let m = self.decode_modrm(bus, pfx);
+                let a = self.read_rm8(bus, m.rm);
+                self.flags = alu::test8(a, self.regs.get8(m.reg), self.flags);
+            }
+            0x85 => {
+                let m = self.decode_modrm(bus, pfx);
+                let a = self.read_rm16(bus, m.rm);
+                self.flags = alu::test16(a, self.regs.get16(m.reg), self.flags);
+            }
+            0xA8 => {
+                let b = self.fetch8(bus);
+                self.flags = alu::test8(self.regs.al(), b, self.flags);
+            }
+            0xA9 => {
+                let b = self.fetch16(bus);
+                self.flags = alu::test16(self.regs.ax(), b, self.flags);
+            }
+            0x40..=0x4F => {
+                let r = (op & 7) as usize;
+                let a = self.regs.get16(r);
+                let (v, f) = if op < 0x48 {
+                    alu::inc16(a, self.flags)
+                } else {
+                    alu::dec16(a, self.flags)
+                };
+                self.flags = f;
+                self.regs.set16(r, v);
+            }
+            0xF6 => {
+                let m = self.decode_modrm(bus, pfx);
+                return Some(self.group3_8(bus, m.reg, m.rm));
+            }
+            0xF7 => {
+                let m = self.decode_modrm(bus, pfx);
+                return Some(self.group3_16(bus, m.reg, m.rm));
+            }
+            // D0/D1: count 1; D2/D3: count CL.
+            0xD0..=0xD3 => {
+                let m = self.decode_modrm(bus, pfx);
+                let count = if op & 2 == 0 { 1 } else { self.regs.cl() };
+                if op & 1 == 0 {
+                    let a = self.read_rm8(bus, m.rm);
+                    let r = self.shift8(m.reg, a, count);
+                    self.write_rm8(bus, m.rm, r);
+                } else {
+                    let a = self.read_rm16(bus, m.rm);
+                    let r = self.shift16(m.reg, a, count);
+                    self.write_rm16(bus, m.rm, r);
+                }
+            }
+
+            // --- BCD and sign extension ---
+            0x27 | 0x2F => {
+                let f = if op == 0x27 { alu::daa } else { alu::das };
+                let (r, fl) = f(self.regs.al(), self.flags);
+                self.flags = fl;
+                self.regs.set_al(r);
+            }
+            0x37 | 0x3F => {
+                let f = if op == 0x37 { alu::aaa } else { alu::aas };
+                let (r, fl) = f(self.regs.ax(), self.flags);
+                self.flags = fl;
+                self.regs.set_ax(r);
+            }
+            0xD4 => {
+                let imm = self.fetch8(bus);
+                let Ok((r, fl)) = alu::aam(self.regs.al(), imm, self.flags) else {
+                    return Some(self.divide_error(bus));
+                };
+                self.flags = fl;
+                self.regs.set_ax(r);
+            }
+            0xD5 => {
+                let imm = self.fetch8(bus);
+                let (r, fl) = alu::aad(self.regs.ax(), imm, self.flags);
+                self.flags = fl;
+                self.regs.set_ax(r);
+            }
+            0x98 => self.regs.set_ax(alu::cbw(self.regs.al())),
+            0x99 => self.regs.set_dx(alu::cwd(self.regs.ax())),
+            // SALC (undocumented): AL = CF ? FF : 00.
+            0xD6 => self
+                .regs
+                .set_al(if self.flags & CF != 0 { 0xFF } else { 0 }),
+
+            // --- Strings ---
+            0xA4..=0xA7 | 0xAA..=0xAF => self.string_op(bus, op, pfx),
+
+            // --- I/O and misc ---
+            0xE4 => {
+                let p = self.fetch8(bus) as u16;
+                let v = bus.io_in8(p);
+                self.regs.set_al(v);
+            }
+            0xE5 => {
+                let p = self.fetch8(bus) as u16;
+                let v = bus.io_in16(p);
+                self.regs.set_ax(v);
+            }
+            0xE6 => {
+                let p = self.fetch8(bus) as u16;
+                bus.io_out8(p, self.regs.al());
+            }
+            0xE7 => {
+                let p = self.fetch8(bus) as u16;
+                bus.io_out16(p, self.regs.ax());
+            }
+            0xEC => {
+                let v = bus.io_in8(self.regs.get16(DX));
+                self.regs.set_al(v);
+            }
+            0xED => {
+                let v = bus.io_in16(self.regs.get16(DX));
+                self.regs.set_ax(v);
+            }
+            0xEE => bus.io_out8(self.regs.get16(DX), self.regs.al()),
+            0xEF => bus.io_out16(self.regs.get16(DX), self.regs.ax()),
+            0xD7 => {
+                let off = self.regs.get16(BX).wrapping_add(self.regs.al() as u16);
+                let v = self.read_mem8(bus, pfx.seg.unwrap_or(Seg::Ds), off);
+                self.regs.set_al(v);
+            }
+            0x9B => {} // WAIT: no FPU
+            // ESC: decode the operand and ignore it (no FPU).
+            0xD8..=0xDF => {
+                self.decode_modrm(bus, pfx);
             }
             _ => return None,
         }

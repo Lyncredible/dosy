@@ -5,10 +5,13 @@ pub mod alu;
 pub mod decode;
 mod exec;
 pub mod flags;
+mod ops;
 pub mod regs;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_8086;
 
 pub use decode::{ModRm, Prefixes, Rep, Rm};
 pub use exec::condition;
