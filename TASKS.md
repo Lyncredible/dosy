@@ -17,7 +17,7 @@ all its dependencies are `done`.
 | 001 | CPU ALU and flags | done | 000 | worker-2 | [001](tasks/001-cpu-alu.md) |
 | 002 | CPU state, decoder and control flow | done | 000 | worker-1 | [002](tasks/002-cpu-core.md) |
 | 003 | Memory, Hardware bus and scheduler | done | 000 | worker-3 | [003](tasks/003-memory-bus.md) |
-| 004 | VFS traits, DOS paths and MemDrive | todo | 000 | — | [004](tasks/004-vfs-core.md) |
+| 004 | VFS traits, DOS paths and MemDrive | done | 000 | worker-3 | [004](tasks/004-vfs-core.md) |
 | 005 | Ghostty-style config parser | done | 000 | worker-1 | [005](tasks/005-config.md) |
 | 006 | wgpu presenter with integer scaling | todo | 000 | — | [006](tasks/006-render-core.md) |
 | 007 | Complete 8086 instruction set | todo | 001, 002 | — | [007](tasks/007-cpu-8086.md) |

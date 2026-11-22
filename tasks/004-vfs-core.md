@@ -1,9 +1,9 @@
 # 004 — VFS traits, DOS paths and MemDrive
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 000
-- **Owner:** —
+- **Owner:** worker-3
 
 ## Goal
 The drive abstraction the DOS kernel talks to, plus an in-memory drive for
@@ -22,7 +22,7 @@ tests.
 - `MemDrive`: tree in memory, all ops, optional read-only flag.
 
 ## Acceptance criteria
-- [ ] Tests: name validation, path parsing, wildcard table, MemDrive CRUD,
+- [x] Tests: name validation, path parsing, wildcard table, MemDrive CRUD,
       read-only errors, seek beyond EOF + write extends, rename across dirs.
 
 ## Notes

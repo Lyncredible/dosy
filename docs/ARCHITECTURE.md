@@ -269,6 +269,7 @@ pub trait Drive: Send {
     fn rename(&mut self, from: &DosPath, to: &DosPath) -> Result<(), DosError>;
     fn mkdir(&mut self, p: &DosPath) -> Result<(), DosError>;
     fn rmdir(&mut self, p: &DosPath) -> Result<(), DosError>;
+    fn set_attr(&mut self, p: &DosPath, attr: Attr) -> Result<(), DosError>;
 }
 pub trait DosFile: Send {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, DosError>;
@@ -276,12 +277,14 @@ pub trait DosFile: Send {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, DosError>;
     fn set_len(&mut self, len: u64) -> Result<(), DosError>;
     fn mtime(&self) -> DosDateTime;
+    fn set_mtime(&mut self, t: DosDateTime) -> Result<(), DosError>;
 }
 ```
 
 - `DosPath`: drive-relative absolute path of validated uppercase 8.3
   components. `DosError` maps 1:1 to DOS error codes. Wildcard matching
-  (`*.EXE`, `?`) lives here; FindFirst/Next state lives in the kernel.
+  (`*.EXE`, `?`, FCB semantics via `DosPattern`) lives here; FindFirst/Next
+  state lives in the kernel. `read_dir` omits `.`/`..`.
 - Drives: `MemDrive` (tests), `HostDrive` (directory; also single-file
   mounts), `ZipDrive` (read-only; index at mount, entries inflated into memory
   on open), `OverlayDrive` (read-only lower + writable upper, whiteouts).

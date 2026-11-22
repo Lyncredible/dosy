@@ -1,6 +1,16 @@
 //! DOS drive abstraction: host directory, single-file and zip mounts with 8.3
 //! name mapping. Uses only `std::fs` for host access; no emulator knowledge.
-//! See `docs/ARCHITECTURE.md` ("dosy-vfs") for the planned `Drive` trait.
+//! See `docs/ARCHITECTURE.md` ("dosy-vfs").
+
+mod drive;
+mod error;
+mod mem;
+mod name;
+
+pub use drive::{Attr, DirEntry, DosDateTime, DosFile, Drive, DriveInfo, OpenMode, SeekFrom};
+pub use error::DosError;
+pub use mem::MemDrive;
+pub use name::{DosName, DosPath, DosPattern, matches};
 
 /// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
