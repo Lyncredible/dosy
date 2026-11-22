@@ -15,7 +15,7 @@ all its dependencies are `done`.
 | ID | Title | Status | Depends on | Owner | File |
 |----|-------|--------|------------|-------|------|
 | 001 | CPU ALU and flags | done | 000 | worker-2 | [001](tasks/001-cpu-alu.md) |
-| 002 | CPU state, decoder and control flow | todo | 000 | — | [002](tasks/002-cpu-core.md) |
+| 002 | CPU state, decoder and control flow | done | 000 | worker-1 | [002](tasks/002-cpu-core.md) |
 | 003 | Memory, Hardware bus and scheduler | done | 000 | worker-3 | [003](tasks/003-memory-bus.md) |
 | 004 | VFS traits, DOS paths and MemDrive | todo | 000 | — | [004](tasks/004-vfs-core.md) |
 | 005 | Ghostty-style config parser | todo | 000 | — | [005](tasks/005-config.md) |
