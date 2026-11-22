@@ -14,6 +14,7 @@ dosy-core = { path = "crates/dosy-core" }
 dosy-vfs = { path = "crates/dosy-vfs" }
 dosy-config = { path = "crates/dosy-config" }
 dosy-render = { path = "crates/dosy-render" }
+log = "0.4"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
