@@ -22,7 +22,7 @@ pub const ARITH: u32 = CF | PF | AF | ZF | SF | OF;
 /// Parity flag value for the low byte of `v` (set when the bit count is even).
 #[inline]
 pub fn parity(v: u32) -> u32 {
-    if (v as u8).count_ones() % 2 == 0 {
+    if (v as u8).count_ones().is_multiple_of(2) {
         PF
     } else {
         0
