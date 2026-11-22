@@ -24,3 +24,9 @@
 - [ ] Headless tests: PIT IRQ0 handler counting ticks over 1 emulated second
       (≈18), HLT wakes on IRQ, Retry loop resumes after an IRQ, callback
       dispatch, determinism (same inputs → same memory hash).
+
+## Review follow-ups
+- [ ] Honor `cpu.int_shadow`: take no maskable IRQ for the one instruction
+      after STI, MOV SS or POP SS. Test it with a pending IRQ0.
+- [ ] Wire `Hardware::fire_due`, `advance_cycles` and `cycles_until` into
+      the `run_for` loop, so the budget stops at the next scheduler deadline.

@@ -24,3 +24,9 @@ Enough PC BIOS for DOS and programs: BDA, IVT, and the core interrupts.
 - [ ] `FlatBus` tests per handler: tick rollover, key translation table
       (letters, shifted, ctrl, extended arrows → 00/E0 scan), buffer full,
       INT 16/00 Retry then Done.
+
+## Review follow-ups (low priority)
+- [ ] Make `Memory::load_rom` / `Hardware::load_rom` robust. Today they apply
+      the A20 mask to the start address only and panic when the copy runs past
+      the end of RAM. Mask or wrap per byte (or clip) and never panic. Add a
+      test that loads across the 1 MiB and HMA end boundaries.
