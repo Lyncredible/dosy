@@ -30,3 +30,6 @@
       after STI, MOV SS or POP SS. Test it with a pending IRQ0.
 - [ ] Wire `Hardware::fire_due`, `advance_cycles` and `cycles_until` into
       the `run_for` loop, so the budget stops at the next scheduler deadline.
+- [ ] `Pic::acknowledge()` returns `None` when nothing is pending, so call
+      it only after `pending_vector()` returns `Some`. Optionally, return the
+      spurious IRQ7 vector instead.

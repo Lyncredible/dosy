@@ -22,3 +22,9 @@ Handle-based file and directory services on top of `dosy-vfs` drives.
 ## Acceptance criteria
 - [ ] Tests with `MemDrive`: create/write/seek/read, find-first wildcard
       listing order, error codes, cwd per drive, handle exhaustion.
+
+## Review follow-ups
+- [ ] Real DOS silently truncates over-long names
+      (`LONGFILENAME.TEXT` → `LONGFILE.TEX`), but `DosName::parse` rejects
+      them. Truncate each component before parsing, or add a lenient parse to
+      `dosy-vfs`, for open, create, find and rename paths. Add a test.
