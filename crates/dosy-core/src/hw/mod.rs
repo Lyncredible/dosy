@@ -1,12 +1,14 @@
 //! The real machine's [`Bus`]: memory, devices, IRQ lines and the scheduler.
 
 pub mod pic;
+pub mod pit;
 mod ports;
 pub mod sched;
 
 use std::collections::HashSet;
 
 pub use pic::Pic;
+pub use pit::Pit;
 pub use sched::{DeviceId, Event, Scheduler};
 
 use crate::bus::{Addr, Bus};
@@ -84,6 +86,9 @@ pub struct Hardware<M: Mmio = NoMmio> {
     pub irq: IrqLines,
     pub sched: Scheduler,
     pub pic: Pic,
+    pub pit: Pit,
+    /// Port 61h bits 0–3 as last written.
+    port61: u8,
     now: u64,
     cycles_per_ms: u32,
     /// Sub-ns remainder of `cycles * 1e6 / cycles_per_ms`.
@@ -111,6 +116,8 @@ impl<M: Mmio> Hardware<M> {
             irq: IrqLines::default(),
             sched: Scheduler::new(),
             pic: Pic::new(),
+            pit: Pit::new(),
+            port61: 0,
             now: 0,
             cycles_per_ms: DEFAULT_CYCLES_PER_MS,
             cycle_rem: 0,
@@ -175,6 +182,24 @@ impl<M: Mmio> Hardware<M> {
             self.pic.raise(rising.trailing_zeros() as u8);
             rising &= rising - 1;
         }
+    }
+
+    /// Port 61h: bit 0 PIT ch2 gate, bit 1 speaker enable, bit 4 refresh
+    /// toggle (~15 us), bit 5 PIT ch2 output.
+    fn port61_in(&mut self) -> u8 {
+        let refresh = ((self.now / 15_085) & 1) as u8;
+        let out2 = self.pit.ch2_out(self.now) as u8;
+        (self.port61 & 0x0F) | refresh << 4 | out2 << 5
+    }
+
+    fn port61_out(&mut self, val: u8) {
+        self.port61 = val & 0x0F;
+        self.pit.set_ch2_gate(val & 1 != 0, self.now);
+    }
+
+    /// Port 61h bit 1: speaker data enable.
+    pub fn speaker_enabled(&self) -> bool {
+        self.port61 & 0x02 != 0
     }
 
     fn unclaimed_in(&mut self, port: u16) -> u8 {
@@ -304,8 +329,8 @@ mod tests {
     #[test]
     fn fire_due_pops_events_up_to_now() {
         let mut hw = Hardware::new();
-        hw.sched.schedule(500, DeviceId::PIT, 0);
-        hw.sched.schedule(2_000_000, DeviceId::PIT, 0);
+        hw.sched.schedule(500, DeviceId(200), 0);
+        hw.sched.schedule(2_000_000, DeviceId(200), 0);
         hw.advance_cycles(3000);
         hw.fire_due();
         assert_eq!(hw.sched.next_due(), Some(2_000_000));
