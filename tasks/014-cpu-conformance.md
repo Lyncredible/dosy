@@ -22,3 +22,10 @@ mode) JSON suites.
 ## Acceptance criteria
 - [ ] All 8086 opcodes implemented in 007 pass or are listed with a reason.
 - [ ] Optional CI job (non-blocking) that fetches and runs the suite.
+
+## Review follow-ups
+- The ALU (001) follows 186+/386 semantics: IDIV accepts the quotient
+  -2^(n-1), shift and rotate counts are masked to 5 bits, and undefined flags
+  follow DOSBox. 8088 vectors will mismatch on these, so either keep a
+  per-opcode exception list or flag mask for 8088, or prefer the 80286 / 386
+  real-mode vectors as the primary suite.

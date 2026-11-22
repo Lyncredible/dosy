@@ -24,3 +24,8 @@ Interrupt controller and timer, the heartbeat of every DOS program.
       cascade vector numbers.
 - [ ] PIT tests: mode 2/3 period at default 65536 → 18.2065 Hz, counter
       readback mid-period, reprogramming mid-count, mode 0 one-shot IRQ.
+
+## Review follow-ups
+- [ ] Implement `Hardware::sync_irqs` (a no-op since 003): apply each
+      device's `IrqLines` to the PIC, otherwise device IRQs are dropped. Test
+      that a device raising IRQ0 or IRQ1 shows up in `pending_vector()`.
