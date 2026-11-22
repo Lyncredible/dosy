@@ -236,6 +236,7 @@ impl Config {
         diags: &mut Vec<Diagnostic>,
     ) {
         let mut includes = Vec::new();
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         for (i, line) in text.lines().enumerate() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {

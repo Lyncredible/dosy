@@ -83,7 +83,7 @@ fn lists_append_and_empty_value_resets() {
 
 #[test]
 fn diagnostics_have_line_numbers_and_never_abort() {
-    let (c, d) = parse("# comment\n\nbogus = 1\nscale = huge\njunk line\ncrt = true\n");
+    let (c, d) = parse("\u{feff}# comment\n\nbogus = 1\nscale = huge\njunk line\ncrt = true\n");
     assert!(c.crt, "later lines still apply");
     let lines: Vec<usize> = d.iter().map(|d| d.line).collect();
     assert_eq!(lines, [3, 4, 5]);
@@ -134,7 +134,7 @@ fn cli_overrides_in_order() {
     let rest = c.apply_cli(
         [
             "--cycles=200",
-            "game.exe",
+            "app.exe",
             "--cycles=300",
             "--mount=",
             "--mount=D:/b",
@@ -143,7 +143,7 @@ fn cli_overrides_in_order() {
         ],
         &mut d,
     );
-    assert_eq!(rest, ["game.exe"]);
+    assert_eq!(rest, ["app.exe"]);
     assert_eq!(c.cycles.get(), 300);
     assert_eq!(c.mount.len(), 1);
     assert_eq!(c.mount[0].letter, 'D');

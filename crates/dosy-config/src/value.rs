@@ -220,8 +220,8 @@ mod tests {
 
     #[test]
     fn mounts() {
-        let m = Mount::parse("c:/games/x").unwrap();
-        assert_eq!((m.letter, m.path), ('C', PathBuf::from("/games/x")));
+        let m = Mount::parse("c:/dos/apps").unwrap();
+        assert_eq!((m.letter, m.path), ('C', PathBuf::from("/dos/apps")));
         // Windows paths keep their own drive colon.
         let m = Mount::parse(r"D:C:\dos").unwrap();
         assert_eq!(m.path, PathBuf::from(r"C:\dos"));
