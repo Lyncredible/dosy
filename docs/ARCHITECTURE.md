@@ -115,8 +115,10 @@ pub trait IoDevice {
 - `Hardware` owns `Memory` and each device as a concrete field; `ports.rs`
   is one `match` routing port ranges to devices. Unclaimed ports read `0xFF`,
   writes are ignored (logged once).
-- Devices raise/lower IRQs through `IrqLines`; `Hardware` applies them to the
-  PIC after each call. Devices never call each other directly; cross-device
+- Devices raise/lower IRQs through `IrqLines`; `Hardware` forwards rising
+  edges to the PIC after each call (`pulse` = one edge). The PIC latches IRR
+  on the edge; the machine uses `hw.pic.pending_vector()` /
+  `hw.pic.acknowledge()`. Devices never call each other directly; cross-device
   wiring (PIT ch2 → speaker, 8042 → A20) is done in `Hardware`.
 - `Scheduler`: min-heap of `(due_ns, DeviceId, kind)`. `now` is emulated
   nanoseconds.

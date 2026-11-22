@@ -7,11 +7,9 @@
 //! device_event: DeviceId::FOO => self.foo.event(ev.kind, ctx!(self, ev.at)),
 //! ```
 
-#[allow(unused_imports)] // used by ctx! once devices land
-use super::{Event, Hardware, IoCtx};
+use super::{Event, Hardware, IoCtx, IoDevice};
 use crate::memory::Mmio;
 
-#[allow(unused_macros)] // used once devices land
 /// `&mut IoCtx` borrowing the hardware's clock, IRQ lines and scheduler.
 macro_rules! ctx {
     ($hw:ident) => {
@@ -28,15 +26,15 @@ macro_rules! ctx {
 
 impl<M: Mmio> Hardware<M> {
     pub(super) fn port_in(&mut self, port: u16) -> u8 {
-        #[allow(clippy::match_single_binding)]
         match port {
+            0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.read(port, ctx!(self)),
             _ => self.unclaimed_in(port),
         }
     }
 
     pub(super) fn port_out(&mut self, port: u16, val: u8) {
-        #[allow(clippy::match_single_binding)]
         match port {
+            0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.write(port, val, ctx!(self)),
             _ => self.unclaimed_out(port, val),
         }
     }
