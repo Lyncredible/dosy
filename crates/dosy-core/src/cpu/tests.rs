@@ -6,12 +6,12 @@ use super::*;
 use crate::bus::{FlatBus, linear};
 use crate::hle::{StubKind, install_stub};
 
-const CODE: u16 = 0x1000;
-const STACK: u16 = 0x2000;
-const DATA: u16 = 0x3000;
+pub(super) const CODE: u16 = 0x1000;
+pub(super) const STACK: u16 = 0x2000;
+pub(super) const DATA: u16 = 0x3000;
 
 /// CPU at CODE:0000 with `code` loaded, SS:SP = STACK:0100, DS = DATA.
-fn setup(code: &[u8]) -> (Cpu, FlatBus) {
+pub(super) fn setup(code: &[u8]) -> (Cpu, FlatBus) {
     let mut cpu = Cpu::new();
     cpu.far_jump(CODE, 0);
     cpu.sregs.set(Seg::Ss, STACK);
@@ -23,7 +23,7 @@ fn setup(code: &[u8]) -> (Cpu, FlatBus) {
 }
 
 /// Step until HLT; panics on any other non-Ok step or after 1000 steps.
-fn run(cpu: &mut Cpu, bus: &mut FlatBus) {
+pub(super) fn run(cpu: &mut Cpu, bus: &mut FlatBus) {
     for _ in 0..1000 {
         match cpu.step(bus) {
             (Step::Ok, 1) => {}
