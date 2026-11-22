@@ -45,6 +45,14 @@ pub trait Bus {
         self.io_out8(port, lo);
         self.io_out8(port.wrapping_add(1), hi);
     }
+
+    /// Host-side write that bypasses ROM write protection (BIOS/HLE setup).
+    /// Never used by the CPU. Default: plain `write8`s.
+    fn load_rom(&mut self, addr: Addr, bytes: &[u8]) {
+        for (i, &b) in bytes.iter().enumerate() {
+            self.write8(addr.wrapping_add(i as Addr), b);
+        }
+    }
 }
 
 /// Simple bus for tests: flat RAM covering 1 MiB + HMA (no A20 wrap, no MMIO),

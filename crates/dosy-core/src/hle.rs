@@ -98,9 +98,7 @@ pub fn stub_bytes(id: HleId, kind: StubKind) -> [u8; 8] {
 /// address. The entry point is `ROM_SEGMENT:id.stub_offset()`.
 pub fn install_stub<B: Bus>(bus: &mut B, id: HleId, kind: StubKind) -> Addr {
     let addr = linear(ROM_SEGMENT, id.stub_offset());
-    for (i, b) in stub_bytes(id, kind).into_iter().enumerate() {
-        bus.write8(addr + i as Addr, b);
-    }
+    bus.load_rom(addr, &stub_bytes(id, kind));
     addr
 }
 
