@@ -1,9 +1,9 @@
 # 005 — Ghostty-style config parser
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 000
-- **Owner:** —
+- **Owner:** worker-1
 
 ## Goal
 Parse dosy's plain-text config the way Ghostty does into a typed `Config`.
@@ -21,9 +21,12 @@ Parse dosy's plain-text config the way Ghostty does into a typed `Config`.
   bad values warn, never abort.
 
 ## Acceptance criteria
-- [ ] Tests: each value type, list append/reset, include + optional include +
+- [x] Tests: each value type, list append/reset, include + optional include +
       cycle, CLI override order, diagnostics with line numbers.
 
 ## Notes
 - Mirror Ghostty key naming (kebab-case). Keep the key table in one place so
   `dosy +show-config`-style dumping is easy later.
+- `config-file` includes load after the including file (Ghostty order);
+  `--config-file` on the CLI loads immediately. `keybind` values stay raw
+  strings until 042.
