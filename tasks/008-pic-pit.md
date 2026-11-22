@@ -34,3 +34,7 @@ Interrupt controller and timer, the heartbeat of every DOS program.
 - [ ] Implement `Hardware::sync_irqs` (a no-op since 003): apply each
       device's `IrqLines` to the PIC, otherwise device IRQs are dropped. Test
       that a device raising IRQ0 or IRQ1 shows up in `pending_vector()`.
+- [ ] PIC nits:
+  - A pending slave request should show as master IRR bit 2.
+  - OCW3 `0x48` (special mask mode off) should not warn.
+  - A master poll command should take the cascade into account.

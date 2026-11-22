@@ -29,3 +29,7 @@ mode) JSON suites.
   follow DOSBox. 8088 vectors will mismatch on these, so either keep a
   per-opcode exception list or flag mask for 8088, or prefer the 80286 / 386
   real-mode vectors as the primary suite.
+- Nits from 002, which the vectors will show:
+  - A word access at offset 0xFFFF wraps within the segment (DOSBox
+    behavior), where a real 386 raises #GP. Expect mismatches or list them.
+  - A prefix-overflow fault reports opcode 0.
