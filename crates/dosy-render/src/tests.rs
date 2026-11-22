@@ -78,7 +78,10 @@ fn render_to_vec(
 #[test]
 #[ignore = "needs a GPU adapter"]
 fn headless_render_reads_back_palette_colors() {
-    let (device, queue) = headless().expect("no GPU adapter");
+    let Some((device, queue)) = headless() else {
+        eprintln!("skipping: no GPU adapter");
+        return;
+    };
     let mut p = Presenter::new(&device, wgpu::TextureFormat::Rgba8Unorm);
 
     // 2x2 square-pixel frame: red green / blue black.

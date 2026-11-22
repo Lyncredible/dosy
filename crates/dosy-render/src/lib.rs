@@ -94,16 +94,17 @@ impl Renderer {
             .ok_or(RenderError::SurfaceUnsupported)?;
         surface_config.present_mode = wgpu::PresentMode::AutoVsync;
         let presenter = Presenter::new(&device, surface_config.format);
-        let mut r = Self {
+        // Always configure (size clamped to >= 1) so a zero initial size
+        // still leaves a usable surface.
+        surface.configure(&device, &surface_config);
+        Ok(Self {
             surface,
             device,
             queue,
             surface_config,
             presenter,
             config: RenderConfig::default(),
-        };
-        r.resize(size.0, size.1);
-        Ok(r)
+        })
     }
 
     pub fn config(&self) -> &RenderConfig {

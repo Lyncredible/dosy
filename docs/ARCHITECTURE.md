@@ -25,7 +25,7 @@ crates/
   dosy-vfs     Drive/DosFile traits, host dir / file / zip /   deps: zip (deflate only)
                overlay drives, 8.3 name mapping
   dosy-config  Ghostty-style config parsing → typed Config     deps: none
-  dosy-render  wgpu presenter: scaling, palette, CRT, themes,  deps: dosy-core, wgpu
+  dosy-render  wgpu presenter: scaling, palette, CRT, themes,  deps: dosy-core, wgpu, pollster
                vector text
   dosy         app: winit, input mapping, cpal, threads, CLI   deps: all of the above
 ```
