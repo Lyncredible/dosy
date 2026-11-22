@@ -69,7 +69,8 @@ pub trait Bus {
     fn write8(&mut self, addr: u32, val: u8);
     fn io_in8(&mut self, port: u16) -> u8;
     fn io_out8(&mut self, port: u16, val: u8);
-    // provided: read16/32, write16/32, io_in16, io_out16 (little-endian)
+    // provided: read16/32, write16/32, io_in16, io_out16 (little-endian),
+    // load_rom(addr, &[u8]): host write bypassing ROM protection (HLE stubs)
 }
 ```
 
@@ -116,7 +117,13 @@ pub trait IoDevice {
   wiring (PIT ch2 → speaker, 8042 → A20) is done in `Hardware`.
 - `Scheduler`: min-heap of `(due_ns, DeviceId, kind)`. `now` is emulated
   nanoseconds.
-- MMIO: `Memory` forwards `A0000–BFFFF` to the VGA (planar/chain-4 logic).
+- MMIO: `Memory` forwards `A0000–BFFFF` to the VGA (planar/chain-4 logic)
+  via `trait Mmio` (`None`/`false` = plain RAM). `Hardware<M: Mmio = NoMmio>`
+  owns it as `mmio`; the VGA task swaps in its type.
+- `Hardware`: `now()`, `advance_cycles(n)`, `advance_to(ns)`,
+  `cycles_until(ns)`, `set_cycles_per_ms`, `fire_due()`. `DeviceId` is a
+  newtype with reserved constants per device. Ports and events route in
+  `hw/ports.rs` (one arm per device, `ctx!(self)` builds the `IoCtx`).
 
 ### HLE (BIOS / DOS / shell) (`hle.rs`, exists)
 
