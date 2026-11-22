@@ -9,6 +9,7 @@ pub mod cpu;
 pub mod dos;
 pub mod hle;
 pub mod hw;
+pub mod machine;
 pub mod memory;
 pub mod video;
 

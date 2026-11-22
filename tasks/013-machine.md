@@ -1,9 +1,9 @@
 # 013 — Machine loop, interrupts and HLE dispatch
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 003, 007, 008
-- **Owner:** —
+- **Owner:** worker-1
 
 ## Goal
 `Machine` ties CPU, Hardware and HLE together per the timing model.
@@ -21,15 +21,20 @@
   add one line each to `Machine::new`.
 
 ## Acceptance criteria
-- [ ] Headless tests: PIT IRQ0 handler counting ticks over 1 emulated second
+- [x] Headless tests: PIT IRQ0 handler counting ticks over 1 emulated second
       (≈18), HLT wakes on IRQ, Retry loop resumes after an IRQ, callback
       dispatch, determinism (same inputs → same memory hash).
 
 ## Review follow-ups
-- [ ] Honor `cpu.int_shadow`: take no maskable IRQ for the one instruction
+- [x] Honor `cpu.int_shadow`: take no maskable IRQ for the one instruction
       after STI, MOV SS or POP SS. Test it with a pending IRQ0.
-- [ ] Wire `Hardware::fire_due`, `advance_cycles` and `cycles_until` into
+- [x] Wire `Hardware::fire_due`, `advance_cycles` and `cycles_until` into
       the `run_for` loop, so the budget stops at the next scheduler deadline.
-- [ ] `Pic::acknowledge()` returns `None` when nothing is pending, so call
+- [x] `Pic::acknowledge()` returns `None` when nothing is pending, so call
       it only after `pending_vector()` returns `Some`. Optionally, return the
       spurious IRQ7 vector instead.
+
+## Notes
+- The ≈18 ticks/s test raises IRQ0 from the test at PIT tick times (the PIT
+  is still in 008 part 2). 008 part 2 should add the same test driven by
+  the real PIT. `key_event`/`frame()` wait for 009/010.
