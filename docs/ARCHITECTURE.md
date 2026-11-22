@@ -220,7 +220,8 @@ impl Machine {
   pending IRQs (PIC → `Cpu::interrupt`) when IF=1; repeat. HLT skips ahead to
   the next event.
 - PIT (1.193182 MHz) counters are computed lazily from `now`; channel 0
-  schedules IRQ0, channel 2 drives the speaker. VGA schedules display/retrace
+  schedules IRQ0, channel 2 drives the speaker (`hw.pit.ch2_out(now)`,
+  `ch2_reload()`, `hw.speaker_enabled()`). Port 61h lives in `Hardware`. VGA schedules display/retrace
   edges (~70 Hz) so port 3DAh status is time-accurate. RTC ticks from the
   injected base.
 

@@ -1,6 +1,6 @@
 # 008 — 8259 PIC and 8254 PIT
 
-- **Status:** in-progress
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 003
 - **Owner:** worker-3
@@ -22,16 +22,18 @@ Interrupt controller and timer, the heartbeat of every DOS program.
 ## Progress
 - Part 1 (PIC + `Hardware::sync_irqs`): done. Special mask mode,
   level-triggered mode and AEOI rotation are not modelled (warn).
-- Part 2 (PIT, port 61h bits): todo.
+- Part 2 (PIT, port 61h bits 0/1/4/5): done. BCD counting not modelled
+  (warn). Power-on PIT is unprogrammed; the BIOS (015) programs ch0
+  (`43h←36h`, `40h←00h,00h`).
 
 ## Acceptance criteria
 - [x] PIC tests: init sequence as the BIOS does it, priority, masking, EOI,
       cascade vector numbers.
-- [ ] PIT tests: mode 2/3 period at default 65536 → 18.2065 Hz, counter
+- [x] PIT tests: mode 2/3 period at default 65536 → 18.2065 Hz, counter
       readback mid-period, reprogramming mid-count, mode 0 one-shot IRQ.
 
 ## Review follow-ups
-- [ ] Implement `Hardware::sync_irqs` (a no-op since 003): apply each
+- [x] Implement `Hardware::sync_irqs` (a no-op since 003): apply each
       device's `IrqLines` to the PIC, otherwise device IRQs are dropped. Test
       that a device raising IRQ0 or IRQ1 shows up in `pending_vector()`.
 - [ ] PIC nits:
