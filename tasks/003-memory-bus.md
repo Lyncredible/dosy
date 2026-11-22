@@ -1,9 +1,9 @@
 # 003 — Memory, Hardware bus and scheduler
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 000
-- **Owner:** —
+- **Owner:** worker-3
 
 ## Goal
 The real machine's `Bus`: RAM, A20, ROM, MMIO window, port routing and the
@@ -23,9 +23,9 @@ event scheduler that all devices use.
 - `Hardware::now()` = emulated ns; `advance_cycles(n)` using `cycles_per_ms`.
 
 ## Acceptance criteria
-- [ ] Tests: A20 wrap on/off, ROM write ignored, MMIO routing, scheduler
+- [x] Tests: A20 wrap on/off, ROM write ignored, MMIO routing, scheduler
       ordering/cancel/ties, cycles→ns conversion when `cycles_per_ms` changes.
-- [ ] Port dispatch has a one-line-per-device pattern later tasks extend.
+- [x] Port dispatch has a one-line-per-device pattern later tasks extend.
 
 ## Notes
 - Hot path: `read8/write8` must be cheap (bounds-checked slice index, range

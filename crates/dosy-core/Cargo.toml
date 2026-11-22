@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 dosy-vfs.workspace = true
+log.workspace = true
 
 [lints]
 workspace = true
