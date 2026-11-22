@@ -5,6 +5,7 @@
 
 pub mod audio;
 pub mod bus;
+pub mod cpu;
 pub mod hle;
 pub mod video;
 
