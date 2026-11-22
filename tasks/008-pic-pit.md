@@ -1,9 +1,9 @@
 # 008 — 8259 PIC and 8254 PIT
 
-- **Status:** todo
+- **Status:** in-progress
 - **Milestone:** M1
 - **Depends on:** 003
-- **Owner:** —
+- **Owner:** worker-3
 
 ## Goal
 Interrupt controller and timer, the heartbeat of every DOS program.
@@ -19,8 +19,13 @@ Interrupt controller and timer, the heartbeat of every DOS program.
 - Port 61h bits 0/1/5 handled in `Hardware` (coordinate with 009).
 - Register both in `ports.rs`.
 
+## Progress
+- Part 1 (PIC + `Hardware::sync_irqs`): done. Special mask mode,
+  level-triggered mode and AEOI rotation are not modelled (warn).
+- Part 2 (PIT, port 61h bits): todo.
+
 ## Acceptance criteria
-- [ ] PIC tests: init sequence as the BIOS does it, priority, masking, EOI,
+- [x] PIC tests: init sequence as the BIOS does it, priority, masking, EOI,
       cascade vector numbers.
 - [ ] PIT tests: mode 2/3 period at default 65536 → 18.2065 Hz, counter
       readback mid-period, reprogramming mid-count, mode 0 one-shot IRQ.

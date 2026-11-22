@@ -1,10 +1,12 @@
 //! The real machine's [`Bus`]: memory, devices, IRQ lines and the scheduler.
 
+pub mod pic;
 mod ports;
 pub mod sched;
 
 use std::collections::HashSet;
 
+pub use pic::Pic;
 pub use sched::{DeviceId, Event, Scheduler};
 
 use crate::bus::{Addr, Bus};
@@ -13,12 +15,13 @@ use crate::memory::{Memory, Mmio, NoMmio};
 /// Default CPU speed (config `cycles`).
 pub const DEFAULT_CYCLES_PER_MS: u32 = 3000;
 
-/// IRQ line levels as driven by devices. `Hardware` forwards changes to the
-/// PIC after each device call.
+/// IRQ line levels as driven by devices. `Hardware` forwards rising edges
+/// to the (edge-triggered) PIC after each device call, so a `pulse` within
+/// one call still counts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrqLines {
     level: u16,
-    changed: u16,
+    rising: u16,
 }
 
 impl IrqLines {
@@ -28,11 +31,20 @@ impl IrqLines {
     pub fn lower(&mut self, irq: u8) {
         self.set(irq, false);
     }
+    /// Raise then lower: one edge.
+    pub fn pulse(&mut self, irq: u8) {
+        self.raise(irq);
+        self.lower(irq);
+    }
     pub fn set(&mut self, irq: u8, high: bool) {
         let bit = 1u16 << irq;
-        if (self.level & bit != 0) != high {
-            self.level ^= bit;
-            self.changed |= bit;
+        if high && self.level & bit == 0 {
+            self.rising |= bit;
+        }
+        if high {
+            self.level |= bit;
+        } else {
+            self.level &= !bit;
         }
     }
     pub fn level(&self, irq: u8) -> bool {
@@ -42,9 +54,9 @@ impl IrqLines {
     pub fn levels(&self) -> u16 {
         self.level
     }
-    /// Lines that changed since the last call; clears the change mask.
-    pub fn take_changed(&mut self) -> u16 {
-        std::mem::take(&mut self.changed)
+    /// Lines that rose since the last call; clears the mask.
+    pub fn take_rising(&mut self) -> u16 {
+        std::mem::take(&mut self.rising)
     }
 }
 
@@ -71,6 +83,7 @@ pub struct Hardware<M: Mmio = NoMmio> {
     pub mmio: M,
     pub irq: IrqLines,
     pub sched: Scheduler,
+    pub pic: Pic,
     now: u64,
     cycles_per_ms: u32,
     /// Sub-ns remainder of `cycles * 1e6 / cycles_per_ms`.
@@ -97,6 +110,7 @@ impl<M: Mmio> Hardware<M> {
             mmio,
             irq: IrqLines::default(),
             sched: Scheduler::new(),
+            pic: Pic::new(),
             now: 0,
             cycles_per_ms: DEFAULT_CYCLES_PER_MS,
             cycle_rem: 0,
@@ -154,9 +168,13 @@ impl<M: Mmio> Hardware<M> {
         }
     }
 
-    /// Forward IRQ line changes to the PIC (task 008).
+    /// Forward rising IRQ edges to the PIC.
     fn sync_irqs(&mut self) {
-        let _changed = self.irq.take_changed();
+        let mut rising = self.irq.take_rising();
+        while rising != 0 {
+            self.pic.raise(rising.trailing_zeros() as u8);
+            rising &= rising - 1;
+        }
     }
 
     fn unclaimed_in(&mut self, port: u16) -> u8 {
@@ -260,12 +278,27 @@ mod tests {
         l.raise(0);
         l.raise(0);
         l.raise(12);
-        assert_eq!(l.take_changed(), 1 | 1 << 12);
-        assert_eq!(l.take_changed(), 0);
+        assert_eq!(l.take_rising(), 1 | 1 << 12);
+        assert_eq!(l.take_rising(), 0);
         l.lower(0);
         assert!(!l.level(0) && l.level(12));
         assert_eq!(l.levels(), 1 << 12);
-        assert_eq!(l.take_changed(), 1);
+        assert_eq!(l.take_rising(), 0);
+        l.pulse(3);
+        l.raise(12);
+        assert_eq!((l.take_rising(), l.levels()), (1 << 3, 1 << 12));
+    }
+
+    #[test]
+    fn irq_edges_reach_the_pic() {
+        let mut hw = Hardware::new();
+        hw.irq.pulse(1);
+        hw.irq.raise(14);
+        hw.io_out8(0x21, 0x00); // any device call syncs
+        assert_eq!(hw.pic.acknowledge(), Some(0x09));
+        hw.io_out8(0x20, 0x20);
+        assert_eq!(hw.pic.acknowledge(), Some(0x76));
+        assert_eq!(hw.io_in8(0x21), 0x00);
     }
 
     #[test]
