@@ -11,6 +11,10 @@ pub const TF: u32 = 1 << 8;
 pub const IF: u32 = 1 << 9;
 pub const DF: u32 = 1 << 10;
 pub const OF: u32 = 1 << 11;
+/// I/O privilege level (2 bits); writable in 386 real mode.
+pub const IOPL: u32 = 3 << 12;
+/// Nested task; writable in 386 real mode.
+pub const NT: u32 = 1 << 14;
 
 /// Flags written by arithmetic ops (ADD, SUB, CMP, ...).
 pub const ARITH: u32 = CF | PF | AF | ZF | SF | OF;

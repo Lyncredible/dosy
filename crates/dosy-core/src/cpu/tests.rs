@@ -278,8 +278,8 @@ fn flag_instructions() {
     assert_eq!(cpu.regs.bx() as u32, RESERVED1 | CF | DF | IF);
     assert_eq!(cpu.flags, RESERVED1 | SF | ZF | flags::AF | PF | CF);
     run(&mut cpu, &mut bus);
-    // POPF of FFFF: bits 12..15, 5, 3 stay clear (386 real mode).
-    assert_eq!(cpu.flags, 0x0FD7);
+    // POPF of FFFF: IOPL/NT stick, bits 15, 5, 3 stay clear (386 real mode).
+    assert_eq!(cpu.flags, 0x7FD7);
 }
 
 #[test]

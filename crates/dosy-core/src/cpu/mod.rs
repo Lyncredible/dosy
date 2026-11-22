@@ -20,8 +20,9 @@ use crate::hle::HleId;
 /// FLAGS / EFLAGS value; bit masks in [`flags`].
 pub type Flags = u32;
 
-/// FLAGS bits that POPF / IRET / SAHF may change (386 real mode, IOPL/NT
-/// kept 0). Bits 12..15 read as 0, as on a 386 (an 8086 reads them as 1).
+/// FLAGS bits that POPF / IRET may change (386 real mode). IOPL/NT (12..14)
+/// stick, bit 15 reads 0: that is what CPU-detection code expects of a 386
+/// (8086 reads 12..15 as 1, 286 real mode as 0).
 pub const FLAGS_WRITABLE: u32 = flags::CF
     | flags::PF
     | flags::AF
@@ -30,7 +31,9 @@ pub const FLAGS_WRITABLE: u32 = flags::CF
     | flags::TF
     | flags::IF
     | flags::DF
-    | flags::OF;
+    | flags::OF
+    | flags::IOPL
+    | flags::NT;
 
 /// Outcome of one [`Cpu::step`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
