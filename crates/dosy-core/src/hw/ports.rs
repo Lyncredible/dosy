@@ -7,7 +7,7 @@
 //! device_event: DeviceId::FOO => self.foo.event(ev.kind, ctx!(self, ev.at)),
 //! ```
 
-use super::{Event, Hardware, IoCtx, IoDevice};
+use super::{DeviceId, Event, Hardware, IoCtx, IoDevice};
 use crate::memory::Mmio;
 
 /// `&mut IoCtx` borrowing the hardware's clock, IRQ lines and scheduler.
@@ -28,6 +28,8 @@ impl<M: Mmio> Hardware<M> {
     pub(super) fn port_in(&mut self, port: u16) -> u8 {
         match port {
             0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.read(port, ctx!(self)),
+            0x40..=0x43 => self.pit.read(port, ctx!(self)),
+            0x61 => self.port61_in(),
             _ => self.unclaimed_in(port),
         }
     }
@@ -35,13 +37,15 @@ impl<M: Mmio> Hardware<M> {
     pub(super) fn port_out(&mut self, port: u16, val: u8) {
         match port {
             0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.write(port, val, ctx!(self)),
+            0x40..=0x43 => self.pit.write(port, val, ctx!(self)),
+            0x61 => self.port61_out(val),
             _ => self.unclaimed_out(port, val),
         }
     }
 
     pub(super) fn device_event(&mut self, ev: Event) {
-        #[allow(clippy::match_single_binding)]
         match ev.dev {
+            DeviceId::PIT => self.pit.event(ev.kind, ctx!(self, ev.at)),
             _ => log::warn!("event for unknown device {:?} kind {}", ev.dev, ev.kind),
         }
     }
@@ -50,7 +54,7 @@ impl<M: Mmio> Hardware<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hw::{DeviceId, IoDevice};
+    use crate::hw::IoDevice;
 
     /// Echoes the last write, raises IRQ 3 and schedules an event on write.
     #[derive(Default)]
