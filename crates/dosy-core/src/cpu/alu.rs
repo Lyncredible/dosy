@@ -434,6 +434,7 @@ pub fn das(al: u8, flags: u32) -> (u8, u32) {
     if al & 0x0f > 9 || flags & AF != 0 {
         adj = 0x06;
         af = true;
+        cf = al < 0x06; // borrow from AL - 6 (SDM: CF = old_CF | borrow)
     }
     if al > 0x99 || flags & CF != 0 {
         adj |= 0x60;

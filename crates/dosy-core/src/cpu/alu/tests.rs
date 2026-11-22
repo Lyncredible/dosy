@@ -332,6 +332,8 @@ fn daa_das() {
     assert_eq!(das(0x2d, 0), (0x27, AF | PF));
     assert_eq!(das(0x00, CF), (0xa0, CF | SF | PF));
     assert_eq!(das(0x9a, 0), (0x34, CF | AF | OF));
+    // Borrow from AL - 6 sets CF even without the 0x60 adjust.
+    assert_eq!(das(0x03, AF), (0xfd, CF | AF | SF));
     assert_eq!(das(0x80, AF).0, 0x7a);
     assert_ne!(das(0x80, AF).1 & OF, 0);
 }
