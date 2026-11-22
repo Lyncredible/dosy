@@ -1,0 +1,26 @@
+# 010 — VGA registers, DAC and text mode
+
+- **Status:** todo
+- **Milestone:** M1
+- **Depends on:** 003
+- **Owner:** —
+
+## Goal
+A VGA device that renders 80x25 (and 40x25) text mode into `VideoFrame`.
+
+## Scope
+- `hw/vga/`: 256 KiB VRAM (4 planes), sequencer (3C4/5), CRTC (3D4/5 and
+  3B4/5), graphics controller (3CE/F), attribute controller (3C0/1 flip-flop),
+  misc output (3C2/3CC), DAC (3C6–3C9), input status 1 (3DA) with
+  display-enable and vretrace bits driven by scheduled timing (~70 Hz).
+- Memory window `B8000–BFFFF` text mode (odd/even into planes 0/1, font
+  in plane 2).
+- Text rasterizer: 8x16 font (9-dot optional), attributes, blink, cursor
+  (CRTC 0A/0B/0E/0F), start address (0C/0D) → `VideoFrame` with `text`.
+- Built-in CP437 8x16 and 8x8 fonts from a permissively licensed or public
+  domain source; record source + license in a comment.
+- `Vga::take_frame()` at vretrace for the machine.
+
+## Acceptance criteria
+- [ ] Tests: register round trips, DAC read/write auto-increment, 3DA retrace
+      timing, text rasterization golden hash for a known screen, cursor.
