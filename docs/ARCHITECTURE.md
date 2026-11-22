@@ -80,8 +80,8 @@ implements `Bus` for the real machine; CPU tests use a flat test bus.
 ### CPU (`cpu/`)
 
 ```rust
-pub struct Cpu { pub regs: Regs, pub sregs: SegRegs, pub ip: u32, pub flags: Flags, pub halted: bool, .. }
-pub enum Step { Ok, Halt, Callback(u16), Fault(CpuFault) }
+pub struct Cpu { pub regs: Regs, pub sregs: SegRegs, pub ip: u32, pub flags: Flags, pub halted: bool, pub int_shadow: bool, .. }
+pub enum Step { Ok, Halt, Callback(HleId), Fault(CpuFault) }
 impl Cpu {
     pub fn reset(&mut self);                                   // F000:FFF0
     pub fn step<B: Bus>(&mut self, bus: &mut B) -> (Step, u32); // one instruction, cost in cycles
@@ -91,6 +91,9 @@ impl Cpu {
 
 - Scope: 8086 + 80186 + common 386 real-mode (66/67 prefixes, 32-bit regs,
   FS/GS, MOVZX/SETcc/…). No protected mode, no FPU (BIOS reports none).
+- `Flags` is `u32` (masks in `cpu/flags.rs`). `int_shadow` is set after
+  STI / MOV SS / POP SS: the machine skips IRQs for that step.
+- On `Fault`, IP is rewound to the instruction start (incl. prefixes).
 - `alu.rs` is pure functions `(a, b, flags) -> (result, flags)` so it can be
   built and tested independently.
 - **Callback opcode** `FE 38 lo hi` (an unused `FE /7` form, as in DOSBox)

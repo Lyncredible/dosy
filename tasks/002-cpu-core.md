@@ -1,9 +1,9 @@
 # 002 — CPU state, decoder and control flow
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 000
-- **Owner:** —
+- **Owner:** worker-1
 
 ## Goal
 The CPU skeleton everything else plugs into: state, fetch/decode, ModRM,
@@ -23,12 +23,14 @@ The CPU skeleton everything else plugs into: state, fetch/decode, ModRM,
 - Cycle cost per DOSBox semantics (1 per instruction for now).
 
 ## Acceptance criteria
-- [ ] Tests on `FlatBus` with hand-assembled programs: far jump/call/ret,
+- [x] Tests on `FlatBus` with hand-assembled programs: far jump/call/ret,
       stack wrap at SP=0, segment override, INT/IRET round trip through IVT,
       callback opcode, Jcc table, LOOP.
-- [ ] Instruction pointer wraps within the 64 KiB segment.
+- [x] Instruction pointer wraps within the 64 KiB segment.
 
 ## Notes
 - Leave ALU opcodes for 007; keep the opcode dispatch table easy to extend
   (one `match` arm per opcode or a table of fn pointers).
 - Keep `Regs` 32-bit capable (EAX..) for 025 even if only 16-bit is used.
+- Deferred: TF single-step trap (013/014), 66/67 prefixes and `0F` escape
+  (025), FE/FF INC/DEC (007).
