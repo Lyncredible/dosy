@@ -24,9 +24,3 @@ real mode.
 - [ ] Tests per group; CPU-detection idioms (PUSHF/POPF bit 12–15, AC flag)
       report the configured model.
 - [ ] 80286 SingleStepTests (via 014 harness) pass for real-mode opcodes.
-
-## Review follow-ups
-- [ ] POPF / IRET (and POPFD) must allow writing IOPL/NT (FLAGS bits 12–14)
-      in real mode on the 386 model, so the standard 386-detection idiom works.
-      002 (PR #4) currently keeps them 0. Check main once #4 merges and drop
-      this item if it is already fixed.
