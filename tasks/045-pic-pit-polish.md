@@ -28,5 +28,9 @@ PIT (`hw/pit.rs`):
 Machine tests (only once 013 / PR #14 has merged):
 - Replace the fake IRQ0 tick test with one driven by the real PIT.
 
+BIOS timing:
+- INT 15h/86h (wait CX:DX µs) returns immediately today. Implement it with
+  `HleResult::Retry` plus a deadline in emulated time.
+
 ## Acceptance criteria
 - [ ] One unit test per item above; existing PIC/PIT tests still pass.

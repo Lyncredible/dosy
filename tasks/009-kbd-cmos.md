@@ -23,3 +23,8 @@ Keyboard scancodes reach the guest via IRQ1; CMOS gives the BIOS a clock.
 ## Acceptance criteria
 - [ ] Tests: scancode queue ordering and IRQ1 pacing, 8042 commands,
       A20 toggles memory wrap, CMOS time advances with emulated time.
+
+## Review follow-ups
+- [ ] Port 92h (fast A20) already lives in `Hardware`. The 8042 output-port
+      path (command D1h) must go through the same `mem.set_a20`, so both
+      paths share one A20 state. Test that each path is visible to the other.

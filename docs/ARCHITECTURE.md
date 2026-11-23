@@ -34,8 +34,9 @@ Rules:
 
 - `dosy-core`, `dosy-vfs`, `dosy-config` never depend on winit, wgpu, cpal or
   platform crates, and must test headless on every OS.
-- `dosy-render` never depends on winit; the app hands it a
-  `wgpu::SurfaceTarget` (via raw-window-handle) and the surface size.
+- `dosy-render` never depends on winit. The app creates the
+  `wgpu::Surface<'static>` from its window and hands it to the renderer
+  with the surface size.
 - `dosy-core` does not depend on `dosy-config`; the app maps `Config` to
   `MachineConfig` (core) and `RenderConfig` (render).
 - New third-party deps must be permissively licensed (MIT/Apache/BSD/Zlib);

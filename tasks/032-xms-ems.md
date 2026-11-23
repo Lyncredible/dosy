@@ -20,3 +20,7 @@ Extended/expanded memory for programs that require it.
 ## Acceptance criteria
 - [ ] Tests: EMB alloc/move round trip, HMA access with A20 on, EMS map
       page and read through the frame.
+
+## Review follow-ups
+- [ ] INT 15h/88h returns 0 KB today. Make it report extended memory
+      consistent with what XMS provides (and with the CMOS memory bytes).

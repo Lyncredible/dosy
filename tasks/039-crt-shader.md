@@ -18,3 +18,8 @@ A tasteful, optional CRT look.
 ## Acceptance criteria
 - [ ] Layout/uniform tests; headless render test `#[ignore]`.
 - [ ] Toggle at runtime without recreating the device.
+
+## Review follow-ups
+- [ ] `Renderer::upload` rewrites the palette texture every frame. Skip the
+      write when the palette is unchanged (compare it with the previous one or
+      keep a dirty flag).
