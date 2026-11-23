@@ -350,12 +350,14 @@ fn terminate_returns_to_parent_and_frees_memory() {
         psp: child,
         ss: 0x8000,
         sp: 0x0100,
+        flags: 0x0203,
     });
     dos.set_current_psp(&mut bus, child);
 
     int21(&mut dos, &mut cpu, &mut bus, 0x4C42, 0, 0, 0);
     assert_eq!((cpu.sregs.get(Seg::Cs), cpu.ip), (0x2000, 0x0123));
     assert_eq!((cpu.sregs.get(Seg::Ss), cpu.regs.sp()), (0x8000, 0x0100));
+    assert_eq!(cpu.flags & 0xFFF, 0x202, "parent flags, CF clear");
     assert_eq!(bus.read32(0x23 * 4), 0x3000_0456);
     assert_eq!(dos.current_psp(&mut bus), root);
     assert_eq!(free_paras(&mut bus), before);
@@ -366,10 +368,10 @@ fn terminate_returns_to_parent_and_frees_memory() {
     int21(&mut dos, &mut cpu, &mut bus, 0x4D00, 0, 0, 0);
     assert_eq!(cpu.regs.ax(), 0, "return code is read once");
 
-    // With no child running, terminate is ignored.
-    let cs = cpu.sregs.get(Seg::Cs);
-    int21(&mut dos, &mut cpu, &mut bus, 0x4C00, 0, 0, 0);
-    assert_eq!(cpu.sregs.get(Seg::Cs), cs);
+    // With no child running, the top-level process exits.
+    assert_eq!(dos.exit_code(), None);
+    int21(&mut dos, &mut cpu, &mut bus, 0x4C07, 0, 0, 0);
+    assert_eq!(dos.exit_code(), Some(7));
 }
 
 #[test]
