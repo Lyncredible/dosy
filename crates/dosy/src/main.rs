@@ -4,6 +4,7 @@
 mod app;
 mod cli;
 mod emu;
+mod input;
 mod mailbox;
 mod pacing;
 mod pattern;

@@ -36,7 +36,7 @@ all its dependencies are `done`.
 | 020 | DOS console I/O and character devices | todo | 016, 017 | — | [020](tasks/020-dos-console.md) |
 | 021 | Built-in shell and MOUNT | todo | 011, 013, 019, 020 | — | [021](tasks/021-shell.md) |
 | 022 | Emulation thread, pacing and CLI | in-progress | 012, 013 | worker-2 | [022](tasks/022-app-emu-thread.md) |
-| 023 | Host keyboard to scancodes | todo | 009, 022 | — | [023](tasks/023-keyboard-input.md) |
+| 023 | Host keyboard to scancodes | done | 009, 022 | worker-3 | [023](tasks/023-keyboard-input.md) |
 | 024 | Debug tracing and fault reports | todo | 013 | — | [024](tasks/024-debug-tracing.md) |
 
 ## M2 — Run a real-mode game (graphics + keyboard)

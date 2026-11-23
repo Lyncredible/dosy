@@ -19,6 +19,8 @@ use crate::pattern;
 pub enum HostEvent {
     /// Debug: cycle the test pattern (until VGA output exists).
     NextPattern,
+    /// Set-1 scancode bytes from the host keyboard.
+    Key(Vec<u8>),
     Quit,
 }
 
@@ -179,6 +181,7 @@ impl Emu {
                 self.current = (self.current + 1) % self.patterns.len();
                 self.publish();
             }
+            HostEvent::Key(bytes) => self.machine.key_event(&bytes),
         }
         true
     }
