@@ -1,7 +1,7 @@
 //! Instruction fetch, prefixes and ModRM / 16-bit effective addresses.
 
 use super::Cpu;
-use super::regs::{BP, BX, DI, SI, Seg};
+use super::regs::{BP, BX, DI, SI, SP, Seg};
 use crate::bus::{Bus, linear};
 
 /// Repeat prefix. Recorded here; string instructions (007) act on it.
@@ -22,6 +22,11 @@ pub struct Prefixes {
     pub rep: Rep,
     /// `F0`, ignored (single CPU).
     pub lock: bool,
+    /// `66`: 32-bit operands (386).
+    pub opsize: bool,
+    /// `67`: 32-bit addressing (386). Offsets are truncated to 16 bits (a
+    /// real 386 raises #GP above FFFFh in real mode).
+    pub addr32: bool,
 }
 
 /// Decoded r/m operand.
@@ -56,6 +61,13 @@ impl Cpu {
         u16::from_le_bytes([lo, hi])
     }
 
+    #[inline]
+    pub fn fetch32<B: Bus>(&mut self, bus: &mut B) -> u32 {
+        let lo = self.fetch16(bus) as u32;
+        let hi = self.fetch16(bus) as u32;
+        hi << 16 | lo
+    }
+
     /// Fetch a ModRM byte (plus displacement) and decode it.
     pub fn decode_modrm<B: Bus>(&mut self, bus: &mut B, pfx: &Prefixes) -> ModRm {
         let b = self.fetch8(bus);
@@ -71,6 +83,16 @@ impl Cpu {
             return ModRm {
                 reg,
                 rm: Rm::Reg(rm),
+            };
+        }
+        if pfx.addr32 {
+            let (ea, default_seg) = self.ea32(bus, md, rm);
+            return ModRm {
+                reg,
+                rm: Rm::Mem {
+                    seg: pfx.seg.unwrap_or(default_seg),
+                    off: ea as u16,
+                },
             };
         }
         let r = |i| self.regs.get16(i);
@@ -98,5 +120,42 @@ impl Cpu {
                 off: base.wrapping_add(disp),
             },
         }
+    }
+
+    /// 32-bit effective address (mod != 3) incl. SIB; default segment is SS
+    /// for EBP/ESP bases.
+    fn ea32<B: Bus>(&mut self, bus: &mut B, md: u8, rm: usize) -> (u32, Seg) {
+        let mut seg = Seg::Ds;
+        let base = if rm == 4 {
+            let sib = self.fetch8(bus);
+            let (scale, idx, b) = (sib >> 6, ((sib >> 3) & 7) as usize, (sib & 7) as usize);
+            let index = if idx == SP {
+                0
+            } else {
+                self.regs.get32(idx) << scale
+            };
+            let base = if b == BP && md == 0 {
+                self.fetch32(bus)
+            } else {
+                if b == SP || b == BP {
+                    seg = Seg::Ss;
+                }
+                self.regs.get32(b)
+            };
+            base.wrapping_add(index)
+        } else if rm == BP && md == 0 {
+            self.fetch32(bus)
+        } else {
+            if rm == BP {
+                seg = Seg::Ss;
+            }
+            self.regs.get32(rm)
+        };
+        let disp = match md {
+            0 => 0,
+            1 => self.fetch8(bus) as i8 as u32,
+            _ => self.fetch32(bus),
+        };
+        (base.wrapping_add(disp), seg)
     }
 }
