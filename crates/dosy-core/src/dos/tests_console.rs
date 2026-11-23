@@ -331,3 +331,30 @@ fn ctrl_break_goes_through_int1b() {
     t.dos.callback(ID_INT23, &mut t.cpu, &mut t.bus);
     assert_eq!(t.dos.exit_code(), None);
 }
+
+#[test]
+fn aux_and_printer_functions_do_not_crash() {
+    let mut t = T::new();
+    t.cpu.regs.set_al(0x55);
+    assert_eq!(t.call(0x0300, 0), HleResult::Done);
+    assert_eq!(t.cpu.regs.al(), 0);
+    assert_eq!(t.call(0x0400, b'A' as u16), HleResult::Done);
+    assert_eq!(t.call(0x0500, b'P' as u16), HleResult::Done);
+    assert_eq!(t.row(0), "", "AUX/PRN output does not reach the screen");
+}
+
+#[test]
+fn ctrl_break_ends_line_input() {
+    let mut t = T::new();
+    t.put(0x100, &[10, 0]);
+    t.keys(b"ab");
+    assert_eq!(t.call(0x0A00, 0x100), HleResult::Retry);
+    // INT 1Bh while 0Ah waits; the BIOS also queued a 0000h key.
+    t.dos.callback(ID_INT1B, &mut t.cpu, &mut t.bus);
+    assert!(kbd::push_key(&mut t.bus, 0));
+    assert_eq!(t.call(0x0A00, 0x100), HleResult::Done);
+    assert_eq!(t.row(0), "ab^C");
+    assert!(!t.dos.console.break_pending);
+    // INT 23h was issued with the INT 21h callback as the return address.
+    assert_eq!(t.bus.read16(linear(STACK_SEG, t.cpu.regs.sp())), 0x1234);
+}

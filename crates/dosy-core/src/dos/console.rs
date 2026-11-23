@@ -121,6 +121,10 @@ impl Dos {
     fn edit_line<B: Bus>(&mut self, bus: &mut B, max: usize) -> Line {
         let mut buf = self.console.line.take().unwrap_or_default();
         loop {
+            // Ctrl-Break (INT 1Bh) while waiting for a line.
+            if self.console.break_pending {
+                return Line::Break;
+            }
             let Some(c) = self.key(bus) else {
                 self.console.line = Some(buf);
                 return Line::Wait;
@@ -222,6 +226,16 @@ impl Dos {
                 } else {
                     self.stdout(bus, &[dl]);
                     cpu.regs.set_al(dl);
+                }
+            }
+            // AUX input / AUX output / printer output: AUX and PRN have no
+            // backing device yet, so input reads 0 and output is dropped.
+            0x03..=0x05 => {
+                if self.check_break(cpu, bus) {
+                    return HleResult::Done;
+                }
+                if ah == 0x03 {
+                    cpu.regs.set_al(0);
                 }
             }
             0x09 => {
