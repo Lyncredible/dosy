@@ -286,7 +286,7 @@ impl Vga {
 }
 
 /// Plane 2 offset of character map `bank` (VGA: 0,16K,32K,48K,8K,24K,40K,56K).
-fn bank_offset(bank: usize) -> usize {
+pub fn bank_offset(bank: usize) -> usize {
     ((bank & 3) * 2 + (bank >> 2)) * 0x2000
 }
 

@@ -1,9 +1,10 @@
 //! PC BIOS as high-level emulation: BDA, IVT, ROM stubs and the core
 //! interrupts. Callback ids are `0x00xx`, mostly the vector number.
-//! INT 09h/16h are in `kbd`; INT 10h (016) gets its own module.
+//! INT 09h/16h are in `kbd`; INT 10h is in `video`.
 
 pub mod bda;
 pub mod kbd;
+pub mod video;
 
 use crate::bus::{Addr, Bus, linear};
 use crate::cpu::{Cpu, Seg, flags};
@@ -11,6 +12,7 @@ use crate::hle::{CALLBACK_OPCODE, HleId, HleResult, ROM_SEGMENT, StubKind, insta
 
 pub const INT08: HleId = HleId(HleId::BIOS_BASE + 0x08);
 pub const INT09: HleId = HleId(HleId::BIOS_BASE + 0x09);
+pub const INT10: HleId = HleId(HleId::BIOS_BASE + 0x10);
 pub const INT11: HleId = HleId(HleId::BIOS_BASE + 0x11);
 pub const INT12: HleId = HleId(HleId::BIOS_BASE + 0x12);
 pub const INT15: HleId = HleId(HleId::BIOS_BASE + 0x15);
@@ -84,6 +86,7 @@ pub fn install<B: Bus>(bus: &mut B) {
     bus.load_rom(rom(INT08.stub_offset()), &int08);
     set_vector(bus, 0x08, ROM_SEGMENT, INT08.stub_offset());
     hook(bus, 0x09, INT09, StubKind::Iret);
+    hook(bus, 0x10, INT10, StubKind::Iret);
     hook(bus, 0x11, INT11, StubKind::Iret);
     hook(bus, 0x12, INT12, StubKind::Iret);
     hook(bus, 0x15, INT15, StubKind::Iret);
@@ -92,6 +95,7 @@ pub fn install<B: Bus>(bus: &mut B) {
     hook(bus, 0x1A, INT1A, StubKind::IretSti);
 
     install_bda(bus);
+    video::install(bus);
     init_pic(bus);
     // PIT channel 0: mode 3, count 65536 (18.2 Hz).
     bus.io_out8(0x43, 0x36);
@@ -118,7 +122,7 @@ fn install_bda<B: Bus>(bus: &mut B) {
     bda::write16(bus, bda::KBD_BUF_START, bda::KBD_BUF_DEFAULT);
     bda::write16(bus, bda::KBD_BUF_END, bda::KBD_BUF_DEFAULT_END);
     bda::write8(bus, bda::KBD_FLAGS3, 0x10); // enhanced keyboard
-    // Video: mode 3 on VGA (016 owns these from here on).
+    // Video: mode 3 on VGA; `video::install` sets the mode properly.
     bda::write8(bus, bda::VIDEO_MODE, 0x03);
     bda::write16(bus, bda::VIDEO_COLS, 80);
     bda::write16(bus, bda::VIDEO_PAGE_SIZE, 0x1000);
@@ -150,6 +154,7 @@ pub fn handle<B: Bus>(id: HleId, cpu: &mut Cpu, bus: &mut B) -> HleResult {
     match id {
         INT08 => int08(bus),
         INT09 => kbd::int09(bus),
+        INT10 => video::int10(cpu, bus),
         INT16 => return kbd::int16(cpu, bus),
         INT11 => cpu.regs.set_ax(bda::read16(bus, bda::EQUIPMENT)),
         INT12 => cpu.regs.set_ax(bda::read16(bus, bda::MEMORY_KB)),

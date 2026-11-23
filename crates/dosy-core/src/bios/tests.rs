@@ -66,8 +66,12 @@ fn install_sets_up_rom_ivt_and_bda() {
     assert_eq!(bda::read8(&mut bus, bda::VIDEO_MODE), 3);
     // No RTC on FlatBus (ports read FFh): ticks start at 0.
     assert_eq!(bda::read32(&mut bus, bda::TICKS), 0);
-    // PIC init, IMR, then PIT ch0 mode 3.
-    let out: Vec<_> = bus.io_out.iter().filter(|(p, _)| *p != 0x70).collect();
+    // PIC init, IMR, then PIT ch0 mode 3 (VGA mode set ports aside).
+    let out: Vec<_> = bus
+        .io_out
+        .iter()
+        .filter(|(p, _)| *p != 0x70 && !(0x3B0..=0x3DF).contains(p))
+        .collect();
     let want = [
         (0x20, 0x11),
         (0x21, 0x08),
