@@ -52,6 +52,7 @@ all its dependencies are `done`.
 | 031 | INT 33h mouse driver and host mouse | todo | 015, 022 | — | [031](tasks/031-mouse.md) |
 | 032 | XMS and EMS | todo | 017 | — | [032](tasks/032-xms-ems.md) |
 | 033 | Private game smoke test | todo | 021, 026, 028, 029 | — | [033](tasks/033-game-smoke-test.md) |
+| 046 | DOS kernel polish | todo | 018, 019 | — | [046](tasks/046-dos-kernel-polish.md) |
 
 ## M3 — Sound
 
@@ -73,6 +74,7 @@ all its dependencies are `done`.
 | 042 | Keybinds and actions | todo | 005, 022 | — | [042](tasks/042-keybinds-actions.md) |
 | 044 | Config parser polish | todo | 005 | — | [044](tasks/044-config-polish.md) |
 | 045 | PIC/PIT accuracy polish | todo | 008 | — | [045](tasks/045-pic-pit-polish.md) |
+| 047 | BIOS keyboard polish | todo | 015 | — | [047](tasks/047-bios-keyboard-polish.md) |
 
 ## M5 — Linux/macOS polish
 
