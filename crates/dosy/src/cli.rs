@@ -225,7 +225,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("dosy-setup-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let zip = dir.join("disk.ZIP");
-        std::fs::write(&zip, b"").unwrap();
+        // Empty archive: just the end-of-central-directory record.
+        let mut eocd = b"PK\x05\x06".to_vec();
+        eocd.resize(22, 0);
+        std::fs::write(&zip, eocd).unwrap();
         let d = dir.display();
         let cli = parse([
             format!("--mount=C:{d}"),
