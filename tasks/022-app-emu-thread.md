@@ -1,9 +1,9 @@
 # 022 — Emulation thread, pacing and CLI
 
-- **Status:** todo
+- **Status:** in-progress
 - **Milestone:** M1
 - **Depends on:** 012, 013
-- **Owner:** —
+- **Owner:** worker-2
 
 ## Goal
 Run `Machine` on its own thread at real-time speed and show its frames.
@@ -21,4 +21,17 @@ Run `Machine` on its own thread at real-time speed and show its frames.
 ## Acceptance criteria
 - [ ] Boots to the shell prompt in a window (once 021 has landed; before
       that, shows the BIOS text screen).
-- [ ] Unit tests for the pacing calculator and mailbox.
+- [x] Unit tests for the pacing calculator and mailbox.
+
+## Progress
+Done (PR 1): emu thread (`emu.rs`), `HostEvent` channel, latest-wins
+`Mailbox`, `EventLoopProxy` wake, `Pacer` (1 ms ticks, 50 ms catch-up cap),
+`cycles = max` (new `Cycles` config value), host RTC (UTC; no local offset
+in std), `dosy [PATH] -c cmd` → `EmuSetup { mounts, autoexec }` merged with
+config, clean shutdown, stop + title message on fault/halt.
+
+Remaining (blocked):
+- Mount `EmuSetup.mounts` once host/zip drives exist (011, 028).
+- Run `EmuSetup.autoexec` in the shell (021).
+- Publish `Machine` frames at vsync instead of test patterns (010); then
+  rate-limit presents in `cycles = max`.
