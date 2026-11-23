@@ -4,6 +4,7 @@ pub mod pic;
 pub mod pit;
 mod ports;
 pub mod sched;
+pub mod vga;
 
 use std::collections::HashSet;
 
@@ -12,7 +13,8 @@ pub use pit::Pit;
 pub use sched::{DeviceId, Event, Scheduler};
 
 use crate::bus::{Addr, Bus};
-use crate::memory::{Memory, Mmio, NoMmio};
+use crate::memory::Memory;
+pub use vga::Vga;
 
 /// Default CPU speed (config `cycles`).
 pub const DEFAULT_CYCLES_PER_MS: u32 = 3000;
@@ -79,10 +81,10 @@ pub trait IoDevice {
 }
 
 /// The PC: memory, devices as concrete fields, IRQ lines and the scheduler.
-/// `M` handles the `A0000–BFFFF` window (the VGA, once it exists).
-pub struct Hardware<M: Mmio = NoMmio> {
+/// The VGA handles the `A0000–BFFFF` window.
+pub struct Hardware {
     pub mem: Memory,
-    pub mmio: M,
+    pub vga: Vga,
     pub irq: IrqLines,
     pub sched: Scheduler,
     pub pic: Pic,
@@ -96,23 +98,19 @@ pub struct Hardware<M: Mmio = NoMmio> {
     warned_ports: HashSet<u16>,
 }
 
-impl Hardware<NoMmio> {
-    pub fn new() -> Self {
-        Self::with_mmio(NoMmio)
-    }
-}
-
-impl Default for Hardware<NoMmio> {
+impl Default for Hardware {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M: Mmio> Hardware<M> {
-    pub fn with_mmio(mmio: M) -> Self {
+impl Hardware {
+    /// Devices at power-on. The scheduler starts empty; call
+    /// [`start_video`](Self::start_video) to begin frame timing.
+    pub fn new() -> Self {
         Self {
             mem: Memory::new(),
-            mmio,
+            vga: Vga::new(),
             irq: IrqLines::default(),
             sched: Scheduler::new(),
             pic: Pic::new(),
@@ -123,6 +121,12 @@ impl<M: Mmio> Hardware<M> {
             cycle_rem: 0,
             warned_ports: HashSet::new(),
         }
+    }
+
+    /// Schedule the VGA's vretrace events (frames, ~70 Hz). `Machine::new`
+    /// calls this; device tests that need an idle scheduler don't.
+    pub fn start_video(&mut self) {
+        self.vga.start(&mut self.sched);
     }
 
     /// Emulated time in ns.
@@ -219,14 +223,14 @@ impl<M: Mmio> Hardware<M> {
     }
 }
 
-impl<M: Mmio> Bus for Hardware<M> {
+impl Bus for Hardware {
     #[inline]
     fn read8(&mut self, addr: Addr) -> u8 {
-        self.mem.read8(addr, &mut self.mmio)
+        self.mem.read8(addr, &mut self.vga)
     }
     #[inline]
     fn write8(&mut self, addr: Addr, val: u8) {
-        self.mem.write8(addr, val, &mut self.mmio)
+        self.mem.write8(addr, val, &mut self.vga)
     }
     fn io_in8(&mut self, port: u16) -> u8 {
         let v = self.port_in(port);

@@ -124,8 +124,11 @@ pub trait IoDevice {
 - `Scheduler`: min-heap of `(due_ns, DeviceId, kind)`. `now` is emulated
   nanoseconds.
 - MMIO: `Memory` forwards `A0000–BFFFF` to the VGA (planar/chain-4 logic)
-  via `trait Mmio` (`None`/`false` = plain RAM). `Hardware<M: Mmio = NoMmio>`
-  owns it as `mmio`; the VGA task swaps in its type.
+  via `trait Mmio` (`None`/`false` = plain RAM). `Hardware` owns the VGA
+  as `vga: Vga` (no generic). `Hardware::start_video()` (called by
+  `Machine::new`) schedules vretrace events; at each one the VGA renders a
+  `VideoFrame`, taken with `hw.vga.take_frame()`. `Hardware::new()` leaves
+  the scheduler empty so device tests stay idle.
 - `Hardware`: `now()`, `advance_cycles(n)`, `advance_to(ns)`,
   `cycles_until(ns)`, `set_cycles_per_ms`, `fire_due()`. `DeviceId` is a
   newtype with reserved constants per device. Ports and events route in

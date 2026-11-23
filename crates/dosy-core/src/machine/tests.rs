@@ -182,6 +182,16 @@ fn halt_fast_forwards_through_events() {
 }
 
 #[test]
+fn frames_appear_at_vretrace() {
+    let mut m = machine(&IDLE);
+    m.run_for(3000 * 10);
+    assert!(m.frame().is_none(), "no retrace in the first 10 ms");
+    m.run_for(3000 * 10);
+    let f = m.frame().expect("frame after ~13 ms");
+    assert_eq!((f.seq, f.text.as_ref().unwrap().cols), (1, 80));
+}
+
+#[test]
 fn budget_stops_at_scheduler_deadline() {
     // jmp $ forever; an event at 100 cycles must fire on time.
     let mut m = machine(&[0xEB, 0xFE]);
