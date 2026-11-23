@@ -302,11 +302,14 @@ impl Drive for HostDrive {
         {
             return Err(DosError::AccessDenied);
         }
+        // A new name must not resolve to an existing host file (e.g. via an
+        // NTFS 8.3 alias that differs from ours, or a symlink): create_new.
         let file = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
-            .truncate(true)
+            .create(exists)
+            .truncate(exists)
+            .create_new(!exists)
             .open(&path)
             .map_err(io_err)?;
         Ok(Box::new(HostFile {
@@ -351,7 +354,9 @@ impl Drive for HostDrive {
         let src = self.existing(from)?;
         let (dst, exists) = self.target(to)?;
         self.can_create(exists)?;
-        if exists || (src.is_dir() && to.starts_with(from)) {
+        // `symlink_metadata`: the unmapped host name must not already exist
+        // (NTFS 8.3 alias), or the rename would replace it.
+        if exists || fs::symlink_metadata(&dst).is_ok() || (src.is_dir() && to.starts_with(from)) {
             return Err(DosError::AccessDenied);
         }
         fs::rename(src, dst).map_err(io_err)
