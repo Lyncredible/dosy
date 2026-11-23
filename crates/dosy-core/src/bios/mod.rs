@@ -1,17 +1,20 @@
 //! PC BIOS as high-level emulation: BDA, IVT, ROM stubs and the core
 //! interrupts. Callback ids are `0x00xx`, mostly the vector number.
-//! INT 09h/16h (keyboard) and INT 10h (016) live in their own modules.
+//! INT 09h/16h are in `kbd`; INT 10h (016) gets its own module.
 
 pub mod bda;
+pub mod kbd;
 
 use crate::bus::{Addr, Bus, linear};
 use crate::cpu::{Cpu, Seg, flags};
 use crate::hle::{CALLBACK_OPCODE, HleId, HleResult, ROM_SEGMENT, StubKind, install_stub};
 
 pub const INT08: HleId = HleId(HleId::BIOS_BASE + 0x08);
+pub const INT09: HleId = HleId(HleId::BIOS_BASE + 0x09);
 pub const INT11: HleId = HleId(HleId::BIOS_BASE + 0x11);
 pub const INT12: HleId = HleId(HleId::BIOS_BASE + 0x12);
 pub const INT15: HleId = HleId(HleId::BIOS_BASE + 0x15);
+pub const INT16: HleId = HleId(HleId::BIOS_BASE + 0x16);
 pub const INT19: HleId = HleId(HleId::BIOS_BASE + 0x19);
 pub const INT1A: HleId = HleId(HleId::BIOS_BASE + 0x1A);
 /// Default handler for unclaimed master IRQs (EOI to the master PIC).
@@ -80,9 +83,11 @@ pub fn install<B: Bus>(bus: &mut B) {
     let int08 = [c0, c1, lo, hi, 0xCD, 0x1C, 0xCF, 0x90];
     bus.load_rom(rom(INT08.stub_offset()), &int08);
     set_vector(bus, 0x08, ROM_SEGMENT, INT08.stub_offset());
+    hook(bus, 0x09, INT09, StubKind::Iret);
     hook(bus, 0x11, INT11, StubKind::Iret);
     hook(bus, 0x12, INT12, StubKind::Iret);
     hook(bus, 0x15, INT15, StubKind::Iret);
+    hook(bus, 0x16, INT16, StubKind::IretSti);
     hook(bus, 0x19, INT19, StubKind::Loop);
     hook(bus, 0x1A, INT1A, StubKind::IretSti);
 
@@ -138,6 +143,8 @@ fn init_pic<B: Bus>(bus: &mut B) {
 pub fn handle<B: Bus>(id: HleId, cpu: &mut Cpu, bus: &mut B) -> HleResult {
     match id {
         INT08 => int08(bus),
+        INT09 => kbd::int09(bus),
+        INT16 => return kbd::int16(cpu, bus),
         INT11 => cpu.regs.set_ax(bda::read16(bus, bda::EQUIPMENT)),
         INT12 => cpu.regs.set_ax(bda::read16(bus, bda::MEMORY_KB)),
         INT15 => int15(cpu, bus),

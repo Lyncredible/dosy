@@ -5,6 +5,7 @@
 //! the CPU until the budget, the next scheduler deadline or a deliverable
 //! IRQ. HLT fast-forwards to the next event.
 
+use crate::bios;
 use crate::cpu::flags::IF;
 use crate::cpu::{Cpu, CpuFault, Step};
 use crate::hle::{HleId, HleResult, Subsystem};
@@ -69,13 +70,16 @@ impl Machine {
     pub fn new(cfg: MachineConfig) -> Self {
         let mut hw = Hardware::new();
         hw.set_cycles_per_ms(cfg.cycles_per_ms);
-        Self {
+        bios::install(&mut hw);
+        let mut m = Self {
             cpu: Cpu::new(),
             hw,
             handlers: Default::default(),
             drives: Default::default(),
             rtc_base: 0,
-        }
+        };
+        m.set_handler(Subsystem::Bios, Box::new(bios::handle));
+        m
     }
 
     /// Route callbacks of `subsystem` to `handler` (replacing any previous).
