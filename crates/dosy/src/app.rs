@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use dosy_config::Config;
 use dosy_core::video::VideoFrame;
-use dosy_render::Renderer;
+use dosy_render::{RenderError, Renderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -59,6 +59,18 @@ impl App {
             .with_title("dosy")
             .with_inner_size(LogicalSize::new(960.0, 720.0));
         let window = Arc::new(event_loop.create_window(attrs).map_err(|e| e.to_string())?);
+        let renderer = self.make_renderer(event_loop, &window)?;
+        window.request_redraw();
+        Ok(Gpu { window, renderer })
+    }
+
+    /// New instance, surface and renderer for `window`, with the current
+    /// config and frame. Also used to recover from a lost surface.
+    fn make_renderer(
+        &self,
+        event_loop: &ActiveEventLoop,
+        window: &Arc<Window>,
+    ) -> Result<Renderer, String> {
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(
                 Box::new(event_loop.owned_display_handle()),
@@ -71,8 +83,7 @@ impl App {
             .map_err(|e| e.to_string())?;
         renderer.set_config(render_config(&self.config, window.scale_factor()));
         renderer.upload(&self.frames[self.current]);
-        window.request_redraw();
-        Ok(Gpu { window, renderer })
+        Ok(renderer)
     }
 }
 
@@ -99,11 +110,23 @@ impl ApplicationHandler for App {
                     .set_config(render_config(&self.config, scale_factor));
                 gpu.window.request_redraw();
             }
-            WindowEvent::RedrawRequested => {
-                if let Err(e) = gpu.renderer.render() {
-                    self.fail(event_loop, e.to_string());
+            WindowEvent::RedrawRequested => match gpu.renderer.render() {
+                Ok(()) => {}
+                Err(RenderError::SurfaceLost) => {
+                    // Recreate the surface and renderer, then redraw once.
+                    let window = gpu.window.clone();
+                    match self.make_renderer(event_loop, &window) {
+                        Ok(r) => {
+                            if let Some(gpu) = &mut self.gpu {
+                                gpu.renderer = r;
+                            }
+                            window.request_redraw();
+                        }
+                        Err(e) => self.fail(event_loop, e),
+                    }
                 }
-            }
+                Err(e) => self.fail(event_loop, e.to_string()),
+            },
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
