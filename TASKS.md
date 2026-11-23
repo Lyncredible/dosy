@@ -72,6 +72,7 @@ all its dependencies are `done`.
 | 041 | Vector-font text mode | todo | 006, 010 | — | [041](tasks/041-vector-text.md) |
 | 042 | Keybinds and actions | todo | 005, 022 | — | [042](tasks/042-keybinds-actions.md) |
 | 044 | Config parser polish | todo | 005 | — | [044](tasks/044-config-polish.md) |
+| 045 | PIC/PIT accuracy polish | todo | 008 | — | [045](tasks/045-pic-pit-polish.md) |
 
 ## M5 — Linux/macOS polish
 
