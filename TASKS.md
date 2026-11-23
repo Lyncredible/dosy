@@ -29,7 +29,7 @@ all its dependencies are `done`.
 | 013 | Machine loop, interrupts and HLE dispatch | done | 003, 007, 008 | worker-1 | [013](tasks/013-machine.md) |
 | 014 | CPU conformance tests (SingleStepTests) | todo | 007 | — | [014](tasks/014-cpu-conformance.md) |
 | 015 | BIOS HLE core | done | 002 | worker-3 | [015](tasks/015-bios-hle.md) |
-| 016 | INT 10h video BIOS | todo | 010, 015 | — | [016](tasks/016-int10.md) |
+| 016 | INT 10h video BIOS | done | 010, 015 | worker-1 | [016](tasks/016-int10.md) |
 | 017 | DOS kernel core | done | 002 | worker-4 | [017](tasks/017-dos-kernel.md) |
 | 018 | DOS file and directory I/O | done | 004, 017 | worker-4 | [018](tasks/018-dos-file-io.md) |
 | 019 | COM/EXE loader and EXEC | done | 018 | worker-4 | [019](tasks/019-dos-exec.md) |
