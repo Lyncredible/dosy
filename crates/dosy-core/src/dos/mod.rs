@@ -94,7 +94,8 @@ pub struct Dos {
     pub sft: Vec<Option<SftEntry>>,
     /// FindFirst directories, indexed by the id kept in the DTA.
     search_dirs: Vec<(u8, DosPath)>,
-    pub strategy: Strategy,
+    /// INT 21h/58h strategy word as last set (see `Strategy::from_dos`).
+    pub strategy: u16,
     pub date: Date,
     pub processes: Vec<Process>,
     /// The first process (the shell); owns the master environment.
@@ -328,7 +329,13 @@ impl Dos {
             }
             0x48 => {
                 let owner = self.current_psp(bus);
-                match mcb::alloc(bus, FIRST_MCB, cpu.regs.bx(), owner, self.strategy) {
+                match mcb::alloc(
+                    bus,
+                    FIRST_MCB,
+                    cpu.regs.bx(),
+                    owner,
+                    Strategy::from_dos(self.strategy),
+                ) {
                     Ok(seg) => {
                         cpu.regs.set_ax(seg);
                         ok(cpu, bus);
@@ -433,17 +440,12 @@ impl Dos {
     fn strategy_fn<B: Bus>(&mut self, cpu: &mut Cpu, bus: &mut B) {
         match cpu.regs.al() {
             0 => {
-                cpu.regs.set_ax(self.strategy as u16);
+                cpu.regs.set_ax(self.strategy);
                 ok(cpu, bus);
             }
             1 => {
-                // High bits select UMB use; there are no UMBs, so ignore them.
-                self.strategy = match cpu.regs.bx() & 0x3F {
-                    0 => Strategy::FirstFit,
-                    1 => Strategy::BestFit,
-                    2 => Strategy::LastFit,
-                    _ => return fail(cpu, bus, ERR_FUNCTION),
-                };
+                // Kept as given (UMB bits included) so 5800h reads it back.
+                self.strategy = cpu.regs.bx() & 0xFF;
                 ok(cpu, bus);
             }
             2 => {

@@ -170,6 +170,18 @@ fn bad_block_and_destroyed_chain() {
 }
 
 #[test]
+fn corrupt_last_block_size_is_detected() {
+    let (mut dos, mut cpu, mut bus) = setup();
+    let last = *mcb::walk(&mut bus, FIRST_MCB).unwrap().last().unwrap();
+    for size in [0xFFFF, 0xFFFF - last.seg] {
+        bus.write16(linear(last.seg, 3), size);
+        dos.strategy = 2;
+        assert!(int21(&mut dos, &mut cpu, &mut bus, 0x4800, 0x10, 0, 0));
+        assert_eq!(cpu.regs.ax(), ERR_MCB_DESTROYED);
+    }
+}
+
+#[test]
 fn resize_shrinks_grows_and_reports_max() {
     let (mut dos, mut cpu, mut bus) = setup();
     assert!(!int21(&mut dos, &mut cpu, &mut bus, 0x4800, 0x100, 0, 0));
@@ -190,14 +202,13 @@ fn resize_shrinks_grows_and_reports_max() {
     assert!(int21(&mut dos, &mut cpu, &mut bus, 0x4A00, 0xFFFF, 0, 0));
     let max = cpu.regs.bx();
     assert_eq!(max, 0xA000 - b);
-    assert_eq!(
-        mcb::read(&mut bus, b - 1).size,
-        0x100,
-        "unchanged on failure"
-    );
-    assert!(!int21(&mut dos, &mut cpu, &mut bus, 0x4A00, max, 0, 0));
-    assert!(mcb::read(&mut bus, b - 1).is_last());
+    // A failed grow still takes everything available (DOS 2.1-6.0).
+    let m = mcb::read(&mut bus, b - 1);
+    assert_eq!(m.size, max, "grown to the maximum on failure");
+    assert!(m.is_last());
     assert_eq!(free_paras(&mut bus), 0);
+    assert!(!int21(&mut dos, &mut cpu, &mut bus, 0x4A00, 0x100, 0, 0));
+    assert_eq!(free_paras(&mut bus), max as u32 - 0x101);
 }
 
 #[test]
@@ -227,8 +238,12 @@ fn allocation_strategies() {
     assert!(!int21(&mut dos, &mut cpu, &mut bus, 0x4800, 0x80, 0, 0));
     assert_eq!(cpu.regs.ax(), segs[0], "first fit");
 
-    assert!(int21(&mut dos, &mut cpu, &mut bus, 0x5801, 3, 0, 0));
-    assert_eq!(cpu.regs.ax(), ERR_FUNCTION);
+    // Above 2 acts as last fit; UMB bits are kept for reading back.
+    assert!(!int21(&mut dos, &mut cpu, &mut bus, 0x5801, 0x83, 0, 0));
+    assert!(!int21(&mut dos, &mut cpu, &mut bus, 0x5800, 0, 0, 0));
+    assert_eq!(cpu.regs.ax(), 0x83);
+    assert!(!int21(&mut dos, &mut cpu, &mut bus, 0x4800, 0x10, 0, 0));
+    assert_eq!(cpu.regs.ax(), 0xA000 - 0x80 - 1 - 0x10, "last fit");
 }
 
 #[test]

@@ -23,6 +23,19 @@ pub enum Strategy {
     LastFit = 2,
 }
 
+impl Strategy {
+    /// From an INT 21h/58h value: bits 0–5 pick the fit (above 2 acts as
+    /// last fit, as in DOS); the UMB bits 6–7 don't affect conventional
+    /// memory.
+    pub fn from_dos(v: u16) -> Self {
+        match v & 0x3F {
+            0 => Self::FirstFit,
+            1 => Self::BestFit,
+            _ => Self::LastFit,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mcb {
     pub seg: u16,
@@ -91,7 +104,11 @@ pub fn walk<B: Bus>(bus: &mut B, first: u16) -> Result<Vec<Mcb>, u16> {
     let mut seg = first;
     loop {
         let m = read(bus, seg);
-        if m.kind != MCB_MID && m.kind != MCB_LAST {
+        // The block (and for 'M' the next MCB) must fit below 1 MiB, so
+        // `data()`/`next()` can't overflow on a corrupt size.
+        let end = m.seg as u32 + 1 + m.size as u32;
+        let bad_end = end > 0xFFFF || (m.kind == MCB_MID && end >= 0xFFFF);
+        if (m.kind != MCB_MID && m.kind != MCB_LAST) || m.seg == 0xFFFF || bad_end {
             return Err(ERR_MCB_DESTROYED);
         }
         match out.last_mut() {
@@ -198,8 +215,9 @@ pub fn free<B: Bus>(bus: &mut B, first: u16, data_seg: u16) -> Result<(), u16> {
     Ok(())
 }
 
-/// Resize the block at `data_seg` to `paras`. On `ERR_NO_MEMORY` the error
-/// carries the maximum size the block could grow to; the block is unchanged.
+/// Resize the block at `data_seg` to `paras`. If it can't grow that far it
+/// grows to the maximum (as DOS 2.1–6.0 do) and returns `ERR_NO_MEMORY`
+/// with that size.
 pub fn resize<B: Bus>(
     bus: &mut B,
     first: u16,
@@ -216,16 +234,17 @@ pub fn resize<B: Bus>(
         Some(n) if n.owner == FREE => m.size + 1 + n.size,
         _ => m.size,
     };
-    if paras > avail {
-        return Err((ERR_NO_MEMORY, avail));
-    }
-    if paras > m.size {
+    let target = paras.min(avail);
+    if target > m.size {
         let n = next.expect("growth needs a free successor");
         m.size = avail;
         m.kind = n.kind;
     }
-    split(bus, &mut m, paras);
+    split(bus, &mut m, target);
     write(bus, &m);
+    if paras > avail {
+        return Err((ERR_NO_MEMORY, avail));
+    }
     Ok(())
 }
 
