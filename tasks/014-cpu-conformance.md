@@ -33,3 +33,6 @@ mode) JSON suites.
   - A word access at offset 0xFFFF wraps within the segment (DOSBox
     behavior), where a real 386 raises #GP. Expect mismatches or list them.
   - A prefix-overflow fault reports opcode 0.
+- From 025: there is no 286 `CpuModel`, so the 286 behavior where FLAGS
+  bits 12–15 read 0 (used by 286 detection) isn't modelled. SGDT also stores
+  386-style values. Expect 286-vector mismatches here, or add a 286 model.

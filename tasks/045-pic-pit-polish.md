@@ -1,12 +1,12 @@
-# 045 — PIC/PIT accuracy polish
+# 045 — Chipset accuracy polish (PIC, PIT, 8042, RTC)
 
 - **Status:** todo
 - **Milestone:** M4
-- **Depends on:** 008
+- **Depends on:** 008, 009
 - **Owner:** —
 
 ## Goal
-Close the 8259/8254 accuracy gaps left after 008.
+Close the 8259/8254/8042/RTC accuracy gaps left after 008 and 009.
 
 ## Scope
 PIC (`hw/pic.rs`):
@@ -32,5 +32,13 @@ BIOS timing:
 - INT 15h/86h (wait CX:DX µs) returns immediately today. Implement it with
   `HleResult::Retry` plus a deadline in emulated time.
 
+8042 / CMOS (left over from 009):
+- 8042 aux (PS/2 mouse) port: commands A7h/A8h/D4h and IRQ12.
+- RTC alarm and periodic interrupts on IRQ8 (status regs A/B/C).
+- CPU reset through the 8042 (command FEh pulse), resuming via the BDA
+  shutdown byte / `0040:0067`.
+- Keyboard FEh (resend) response.
+- Port 70h bit 7 NMI mask.
+
 ## Acceptance criteria
-- [ ] One unit test per item above; existing PIC/PIT tests still pass.
+- [ ] One unit test per item above; existing PIC/PIT/8042/CMOS tests still pass.

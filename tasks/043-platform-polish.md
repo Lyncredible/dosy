@@ -19,3 +19,7 @@ First-class Linux and macOS builds and downloadable releases.
 ## Acceptance criteria
 - [ ] Release workflow produces artifacts for all three OSes on a test tag.
 - [ ] Smoke run on each OS documented in the PR (manual).
+- [ ] Release artifacts include a `THIRD_PARTY`/`NOTICE` file covering
+      bundled and linked third-party code. That includes the Spleen font
+      (BSD-2-Clause) and the zip, zlib-rs, wgpu and winit licenses; generate
+      the list (e.g. `cargo about`) rather than hand-maintain it.
