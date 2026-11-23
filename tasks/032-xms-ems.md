@@ -24,3 +24,5 @@ Extended/expanded memory for programs that require it.
 ## Review follow-ups
 - [ ] INT 15h/88h returns 0 KB today. Make it report extended memory
       consistent with what XMS provides (and with the CMOS memory bytes).
+- [ ] One source of truth for the extended-memory size: CMOS 17h/18h and
+      30h/31h, the CMOS 14h equipment byte, INT 15h/88h and XMS must all agree.

@@ -73,8 +73,11 @@ all its dependencies are `done`.
 | 041 | Vector-font text mode | todo | 006, 010 | — | [041](tasks/041-vector-text.md) |
 | 042 | Keybinds and actions | todo | 005, 022 | — | [042](tasks/042-keybinds-actions.md) |
 | 044 | Config parser polish | todo | 005 | — | [044](tasks/044-config-polish.md) |
-| 045 | PIC/PIT accuracy polish | todo | 008 | — | [045](tasks/045-pic-pit-polish.md) |
+| 045 | Chipset accuracy polish (PIC, PIT, 8042, RTC) | todo | 008, 009 | — | [045](tasks/045-pic-pit-polish.md) |
 | 047 | BIOS keyboard polish | todo | 015 | — | [047](tasks/047-bios-keyboard-polish.md) |
+| 048 | Local time | todo | 009, 011 | — | [048](tasks/048-local-time.md) |
+| 049 | VGA accuracy polish | todo | 010 | — | [049](tasks/049-vga-polish.md) |
+| 050 | VFS polish | todo | 011 | — | [050](tasks/050-vfs-polish.md) |
 
 ## M5 — Linux/macOS polish
 

@@ -35,5 +35,11 @@ EXEC / processes:
   Names and paths are handled as guest bytes end to end.
 - Part 2 (EXEC / processes): todo.
 
+## Review follow-ups
+- [ ] Uppercase code-page bytes in filenames with a country uppercase table
+      (CP437), and expose it via INT 21h/6502h.
+- [ ] FindFirst `search_dirs` snapshots are never freed. Cap them, or evict
+      the least recently used.
+
 ## Acceptance criteria
 - [ ] One test per item, using `MemDrive` and hand-built COM/MZ images.
