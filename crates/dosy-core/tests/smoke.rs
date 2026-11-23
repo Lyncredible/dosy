@@ -108,7 +108,8 @@ fn parse_keys(s: &str) -> Vec<(u64, Vec<u8>)> {
                 .split_once('=')
                 .unwrap_or_else(|| panic!("DOSY_SMOKE_KEYS: expected SECS=KEY, got {t:?}"));
             let secs: f64 = secs.parse().expect("DOSY_SMOKE_KEYS: bad seconds");
-            let bytes = key_code(key).unwrap_or_else(|| panic!("DOSY_SMOKE_KEYS: unknown key {key:?}"));
+            let bytes =
+                key_code(key).unwrap_or_else(|| panic!("DOSY_SMOKE_KEYS: unknown key {key:?}"));
             ((secs * 1e9) as u64, bytes)
         })
         .collect();
@@ -161,7 +162,9 @@ fn smoke() {
 
     let cmd = env("DOSY_SMOKE_CMD");
     let secs: f64 = env("DOSY_SMOKE_SECS").map_or(30.0, |s| s.parse().expect("DOSY_SMOKE_SECS"));
-    let mut keys = parse_keys(&env("DOSY_SMOKE_KEYS").unwrap_or_default()).into_iter().peekable();
+    let mut keys = parse_keys(&env("DOSY_SMOKE_KEYS").unwrap_or_default())
+        .into_iter()
+        .peekable();
     let allow_text = env("DOSY_SMOKE_ALLOW_TEXT").is_some_and(|v| v == "1");
 
     let opts = MountOptions {
@@ -222,7 +225,12 @@ fn smoke() {
             std::fs::create_dir_all(dir).expect("create PNG dir");
         }
         std::fs::write(&png, png::encode(f)).expect("write PNG");
-        eprintln!("smoke: final frame {}x{} → {}", f.width, f.height, png.display());
+        eprintln!(
+            "smoke: final frame {}x{} → {}",
+            f.width,
+            f.height,
+            png.display()
+        );
     }
     let warnings = WARNINGS.lock().unwrap_or_else(|e| e.into_inner()).clone();
     eprintln!(
@@ -237,9 +245,20 @@ fn smoke() {
     if let Some(f) = failure {
         panic!("smoke: stopped with {f}\n{}", dump(&mut m));
     }
-    let opcode = warnings.iter().find(|w| w.to_ascii_lowercase().contains("opcode"));
-    assert!(opcode.is_none(), "smoke: {}\n{}", opcode.unwrap(), dump(&mut m));
-    assert!(non_blank_frames > 0, "smoke: no non-blank frame\n{}", dump(&mut m));
+    let opcode = warnings
+        .iter()
+        .find(|w| w.to_ascii_lowercase().contains("opcode"));
+    assert!(
+        opcode.is_none(),
+        "smoke: {}\n{}",
+        opcode.unwrap(),
+        dump(&mut m)
+    );
+    assert!(
+        non_blank_frames > 0,
+        "smoke: no non-blank frame\n{}",
+        dump(&mut m)
+    );
     assert!(
         allow_text || gfx_frames > 0,
         "smoke: no graphics-mode frame (DOSY_SMOKE_ALLOW_TEXT=1 to accept)\n{}",
@@ -256,7 +275,11 @@ mod png {
         for &b in data {
             c ^= b as u32;
             for _ in 0..8 {
-                c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+                c = if c & 1 != 0 {
+                    0xEDB8_8320 ^ (c >> 1)
+                } else {
+                    c >> 1
+                };
             }
         }
         !c
@@ -327,7 +350,16 @@ mod png {
 fn key_spec_parses() {
     let k = parse_keys("2=enter, 1.5=a,3=up,4=0x1c,5=f10");
     let t: Vec<u64> = k.iter().map(|k| k.0).collect();
-    assert_eq!(t, [1_500_000_000, 2_000_000_000, 3_000_000_000, 4_000_000_000, 5_000_000_000]);
+    assert_eq!(
+        t,
+        [
+            1_500_000_000,
+            2_000_000_000,
+            3_000_000_000,
+            4_000_000_000,
+            5_000_000_000
+        ]
+    );
     assert_eq!(k[0].1, [0x1E, 0x9E]);
     assert_eq!(k[2].1, [0xE0, 0x48, 0xE0, 0xC8]);
     assert_eq!(k[4].1, [0x44, 0xC4]);
