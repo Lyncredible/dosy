@@ -277,7 +277,8 @@ impl Vga {
         out
     }
 
-    fn render(&self) -> VideoFrame {
+    /// Render the current state now (vretrace does this automatically).
+    pub fn render(&self) -> VideoFrame {
         let mut f = text::render(self, self.frames);
         f.palette = self.palette();
         f.seq = self.frames;

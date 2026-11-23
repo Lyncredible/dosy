@@ -45,7 +45,10 @@ fn mode3_clears_screen_and_programs_registers() {
     assert_eq!(bda::read16(&mut hw, bda::VIDEO_COLS), 80);
     assert_eq!(bda::read8(&mut hw, bda::VIDEO_ROWS), 24);
     let a = 2 * 0x10000 + 0x41 * 32;
-    assert_eq!(hw.vga.vram[a..a + 16], font::FONT_8X16[0x41 * 16..0x42 * 16]);
+    assert_eq!(
+        hw.vga.vram[a..a + 16],
+        font::FONT_8X16[0x41 * 16..0x42 * 16]
+    );
     let t = hw.vga.render().text.unwrap();
     assert_eq!((t.cols, t.rows), (80, 25));
 
@@ -74,7 +77,10 @@ fn other_modes() {
     int(&mut hw, 0x0013, 0, 0, 0);
     assert_eq!(bda::read8(&mut hw, bda::VIDEO_MODE), 0x13);
     assert_eq!(bda::read16(&mut hw, bda::EQUIPMENT) & 0x30, 0x20);
-    assert_eq!((hw.vga.misc, hw.vga.seq[4], hw.vga.gc[5]), (0x63, 0x0E, 0x40));
+    assert_eq!(
+        (hw.vga.misc, hw.vga.seq[4], hw.vga.gc[5]),
+        (0x63, 0x0E, 0x40)
+    );
     assert_eq!((hw.vga.ac[0x10], hw.vga.crtc[0x14]), (0x41, 0x40));
     assert_eq!(hw.read8(0xA0000), 0);
     assert_eq!(hw.vga.dac[1], [0, 0, 0x2A]);
@@ -110,7 +116,10 @@ fn cursor_in_bda_and_crtc() {
     assert_eq!(crtc_cursor(&hw), 5 * 80 + 10, "page 0 still active");
     int(&mut hw, 0x0501, 0, 0, 0);
     assert_eq!(bda::read8(&mut hw, bda::VIDEO_PAGE), 1);
-    assert_eq!(u16::from_be_bytes([hw.vga.crtc[0x0C], hw.vga.crtc[0x0D]]), 0x800);
+    assert_eq!(
+        u16::from_be_bytes([hw.vga.crtc[0x0C], hw.vga.crtc[0x0D]]),
+        0x800
+    );
     assert_eq!(crtc_cursor(&hw), 0x800 + 80 + 2);
 }
 
@@ -227,11 +236,17 @@ fn info_functions_and_font_vectors() {
     assert_eq!(vec(&mut hw, 0x1F), (0xF000, ROM_FONT_8X8_HI));
     assert_eq!(vec(&mut hw, 0x43), (0xF000, ROM_FONT_8X8));
     assert_eq!(hw.read8(linear(0xF000, VIDEO_PARAMS) + 16), 0x71);
-    assert_eq!(hw.read8(linear(0xF000, ROM_FONT_8X8_HI)), font::FONT_8X8[128 * 8]);
+    assert_eq!(
+        hw.read8(linear(0xF000, ROM_FONT_8X8_HI)),
+        font::FONT_8X8[128 * 8]
+    );
 
     // 1130h: ES:BP of the 8x16 font, CX = height, DL = rows - 1.
     let cpu = int(&mut hw, 0x1130, 0x0600, 0, 0);
-    assert_eq!((cpu.sregs.get(Seg::Es), cpu.regs.bp()), (0xF000, ROM_FONT_8X16));
+    assert_eq!(
+        (cpu.sregs.get(Seg::Es), cpu.regs.bp()),
+        (0xF000, ROM_FONT_8X16)
+    );
     assert_eq!((cpu.regs.cx(), cpu.regs.dl()), (16, 24));
     let a = linear(0xF000, ROM_FONT_8X16) + 0x41 * 16 + 5;
     assert_eq!(hw.read8(a), font::FONT_8X16[0x41 * 16 + 5]);
