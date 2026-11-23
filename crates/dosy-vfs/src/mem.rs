@@ -371,19 +371,9 @@ impl DosFile for MemFile {
     }
 
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, DosError> {
-        let len = lock(&self.data).bytes.len() as i64;
-        let new = match pos {
-            SeekFrom::Start(n) => Some(n),
-            SeekFrom::Current(d) => (self.pos as i64).checked_add(d).map(|v| v as u64),
-            SeekFrom::End(d) => len.checked_add(d).map(|v| v as u64),
-        };
-        match new {
-            Some(n) if n as i64 >= 0 => {
-                self.pos = n;
-                Ok(n)
-            }
-            _ => Err(DosError::InvalidFunction),
-        }
+        let len = lock(&self.data).bytes.len() as u64;
+        self.pos = crate::drive::dos_seek(self.pos, len, pos);
+        Ok(self.pos)
     }
 
     fn set_len(&mut self, len: u64) -> Result<(), DosError> {
@@ -524,10 +514,10 @@ mod tests {
         assert_eq!(read_all(&mut *f), b"ab\0\0\0z");
         assert_eq!(f.seek(SeekFrom::End(-1)).unwrap(), 5);
         assert_eq!(f.seek(SeekFrom::Current(-2)).unwrap(), 3);
-        assert_eq!(
-            f.seek(SeekFrom::Current(-4)),
-            Err(DosError::InvalidFunction)
-        );
+        // Before the start: wraps like DOS; read sees EOF, write fails.
+        assert_eq!(f.seek(SeekFrom::Current(-4)), Ok(0xFFFF_FFFF));
+        assert_eq!(f.read(&mut buf).unwrap(), 0);
+        assert!(f.write(b"x").is_err());
         f.set_len(1).unwrap();
         assert_eq!(read_all(&mut *f), b"a");
         let t = DosDateTime::from_dos(0x1234, 0x5678);

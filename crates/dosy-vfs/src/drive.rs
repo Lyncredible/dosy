@@ -181,6 +181,18 @@ pub trait Drive: Send {
     fn set_attr(&mut self, p: &DosPath, attr: Attr) -> Result<(), DosError>;
 }
 
+/// New file position for `from`, as DOS computes it: 32-bit arithmetic
+/// that wraps, so seeking before the start succeeds (e.g. -1 → FFFFFFFFh)
+/// and only a later read (EOF) or write (error) notices.
+pub fn dos_seek(pos: u64, len: u64, from: SeekFrom) -> u64 {
+    let (base, d) = match from {
+        SeekFrom::Start(n) => (0, n as i64),
+        SeekFrom::Current(d) => (pos, d),
+        SeekFrom::End(d) => (len, d),
+    };
+    (base as u32).wrapping_add(d as u32) as u64
+}
+
 /// An open file. Positions may go past EOF; writing there zero-fills.
 pub trait DosFile: Send {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, DosError>;
