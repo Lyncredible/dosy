@@ -52,6 +52,9 @@ author rebasing onto `origin/main`.
 
 - `rust-toolchain.toml` pins `stable` with rustfmt + clippy; CI uses it on
   windows-latest, ubuntu-latest and macos-latest.
+- MSRV is 1.87 (`rust-version` in `Cargo.toml`), so MSRV-gated clippy lints
+  such as `manual_is_multiple_of` apply. Use `x.is_multiple_of(n)`, not
+  `x % n == 0`.
 - Windows dev machine: default `stable-x86_64-pc-windows-msvc` toolchain.
   Cargo lives in `%USERPROFILE%\.cargo\bin` and may be missing from `PATH`
   in new shells; prepend it:
