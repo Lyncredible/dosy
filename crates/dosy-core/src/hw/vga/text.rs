@@ -8,10 +8,6 @@ use crate::video::{Rgb8, TextCell, TextScreen, VideoFrame};
 const CURSOR_BLINK_FRAMES: u64 = 8;
 
 pub(super) fn render(v: &Vga, frame_no: u64) -> VideoFrame {
-    if v.ac[0x10] & 1 != 0 {
-        // Graphics modes: 026/027.
-        return VideoFrame::blank(640, 400);
-    }
     let cols = v.crtc[1] as usize + 1;
     let char_w = v.char_width() as usize;
     let dclk2 = v.seq[1] & 8 != 0;

@@ -518,7 +518,11 @@ fn set_page<B: Bus>(bus: &mut B, page: u8) {
 /// bottom)` up (or down) by `n` lines (0 = clear), filling with `attr`.
 pub fn scroll<B: Bus>(bus: &mut B, up: bool, n: u8, attr: u8, tl: (u16, u16), br: (u16, u16)) {
     if !is_text(bus) {
-        log::debug!("INT 10h scroll in graphics mode: not implemented (026)");
+        if is_mode13(bus) {
+            scroll13(bus, up, n, attr, tl, br);
+        } else {
+            log::debug!("INT 10h scroll in planar graphics: not implemented (027)");
+        }
         return;
     }
     let page = bda::read8(bus, bda::VIDEO_PAGE);
@@ -555,7 +559,6 @@ pub fn scroll<B: Bus>(bus: &mut B, up: bool, n: u8, attr: u8, tl: (u16, u16), br
 /// AH=0Eh teletype output on `page`: BEL, BS, CR, LF, wrap and scroll.
 /// `attr` is the foreground for graphics modes; text keeps cell attributes.
 pub fn teletype<B: Bus>(bus: &mut B, ch: u8, page: u8, attr: u8) {
-    let _ = attr; // graphics-mode glyphs: 026
     let page = page & 7;
     let (cols, rows) = (cols(bus), rows(bus));
     let (mut col, mut row) = cursor(bus, page);
@@ -568,6 +571,8 @@ pub fn teletype<B: Bus>(bus: &mut B, ch: u8, page: u8, attr: u8) {
             if is_text(bus) {
                 let a = cell_addr(bus, page, col, row);
                 bus.write8(a, ch);
+            } else if is_mode13(bus) {
+                draw_glyph13(bus, col, row, ch, attr);
             }
             col += 1;
             if col >= cols {
@@ -578,9 +583,14 @@ pub fn teletype<B: Bus>(bus: &mut B, ch: u8, page: u8, attr: u8) {
     }
     if row >= rows {
         row = rows - 1;
-        // Scroll with the attribute under the cursor (IBM behaviour).
-        let a = cell_addr(bus, page, col, row);
-        let fill = bus.read8(a + 1);
+        // Scroll with the attribute under the cursor (IBM behaviour);
+        // graphics modes fill with colour 0.
+        let fill = if is_text(bus) {
+            let a = cell_addr(bus, page, col, row);
+            bus.read8(a + 1)
+        } else {
+            0
+        };
         if page == bda::read8(bus, bda::VIDEO_PAGE) {
             scroll(bus, true, 1, fill, (0, 0), (cols - 1, rows - 1));
         }
@@ -590,11 +600,24 @@ pub fn teletype<B: Bus>(bus: &mut B, ch: u8, page: u8, attr: u8) {
 
 /// AH=09h/0Ah: write `ch` (and `attr`) `count` times from the cursor.
 fn write_chars<B: Bus>(bus: &mut B, ch: u8, attr: Option<u8>, page: u8, count: u16) {
+    let (col, row) = cursor(bus, page);
     if !is_text(bus) {
-        log::debug!("INT 10h write char in graphics mode: not implemented (026)");
+        if is_mode13(bus) {
+            // Graphics: AH=09h and 0Ah both draw in colour BL.
+            let color = attr.unwrap_or(0x0F); // int10 always passes BL
+            let (cols, rows) = (cols(bus), rows(bus));
+            for i in 0..count {
+                let pos = row * cols + col + i;
+                if pos >= cols * rows {
+                    break;
+                }
+                draw_glyph13(bus, pos % cols, pos / cols, ch, color);
+            }
+        } else {
+            log::debug!("INT 10h write char in planar graphics: not implemented (027)");
+        }
         return;
     }
-    let (col, row) = cursor(bus, page);
     let start = cell_addr(bus, page, col, row);
     let last_row = rows(bus);
     let page_end = cell_addr(bus, page, 0, last_row);
@@ -606,6 +629,76 @@ fn write_chars<B: Bus>(bus: &mut B, ch: u8, attr: Option<u8>, page: u8, count: u
         bus.write8(a, ch);
         if let Some(attr) = attr {
             bus.write8(a + 1, attr);
+        }
+    }
+}
+
+// --- Mode 13h graphics helpers ---
+
+const MODE13_WIDTH: u16 = 320;
+const MODE13_HEIGHT: u16 = 200;
+
+fn is_mode13<B: Bus>(bus: &mut B) -> bool {
+    bda::read8(bus, bda::VIDEO_MODE) == 0x13
+}
+
+/// AH=0Ch in mode 13h (all 8 bits are colour; no XOR in 256-colour modes).
+pub fn put_pixel13<B: Bus>(bus: &mut B, x: u16, y: u16, color: u8) {
+    if x < MODE13_WIDTH && y < MODE13_HEIGHT {
+        bus.write8(
+            0xA_0000 + y as Addr * MODE13_WIDTH as Addr + x as Addr,
+            color,
+        );
+    }
+}
+
+pub fn get_pixel13<B: Bus>(bus: &mut B, x: u16, y: u16) -> u8 {
+    if x >= MODE13_WIDTH || y >= MODE13_HEIGHT {
+        return 0;
+    }
+    bus.read8(0xA_0000 + y as Addr * MODE13_WIDTH as Addr + x as Addr)
+}
+
+/// Draw an 8x8 glyph from the INT 43h font at text cell (`col`, `row`),
+/// foreground `fg`, background 0.
+fn draw_glyph13<B: Bus>(bus: &mut B, col: u16, row: u16, ch: u8, fg: u8) {
+    let font = linear(bus.read16(0x43 * 4 + 2), bus.read16(0x43 * 4));
+    for gy in 0..8u16 {
+        let bits = bus.read8(font + ch as Addr * 8 + gy as Addr);
+        for gx in 0..8u16 {
+            let on = bits & (0x80 >> gx) != 0;
+            let a =
+                0xA_0000 + (row * 8 + gy) as Addr * MODE13_WIDTH as Addr + (col * 8 + gx) as Addr;
+            bus.write8(a, if on { fg } else { 0 });
+        }
+    }
+}
+
+/// AH=06h/07h in mode 13h: text-cell window, 8 pixel lines per row.
+fn scroll13<B: Bus>(bus: &mut B, up: bool, n: u8, color: u8, tl: (u16, u16), br: (u16, u16)) {
+    let (left, top) = tl;
+    let right = br.0.min(39);
+    let bottom = br.1.min(24);
+    if left > right || top > bottom {
+        return;
+    }
+    let height = (bottom - top + 1) * 8;
+    let n = if n == 0 || n as u16 * 8 > height {
+        height
+    } else {
+        n as u16 * 8
+    };
+    let (x0, x1) = (left * 8, right * 8 + 7);
+    let line = |y: u16| 0xA_0000 + y as Addr * MODE13_WIDTH as Addr;
+    for i in 0..height {
+        let y = if up { top * 8 + i } else { bottom * 8 + 7 - i };
+        let from = (i + n < height).then(|| if up { y + n } else { y - n });
+        for x in x0..=x1 {
+            let v = match from {
+                Some(sy) => bus.read8(line(sy) + x as Addr),
+                None => color,
+            };
+            bus.write8(line(y) + x as Addr, v);
         }
     }
 }
@@ -636,7 +729,24 @@ pub fn int10<B: Bus>(cpu: &mut Cpu, bus: &mut B) {
             cpu.regs.set_ax(bus.read16(a));
         }
         0x09 => write_chars(bus, al, Some(bl), bh, r.cx()),
-        0x0A => write_chars(bus, al, None, bh, r.cx()),
+        0x0A => {
+            // Text keeps the cell attribute; graphics modes draw in colour BL.
+            let attr = if is_text(bus) { None } else { Some(bl) };
+            write_chars(bus, al, attr, bh, r.cx());
+        }
+        0x0C => {
+            if is_mode13(bus) {
+                put_pixel13(bus, r.cx(), r.dx(), al);
+            }
+        }
+        0x0D => {
+            let v = if is_mode13(bus) {
+                get_pixel13(bus, r.cx(), r.dx())
+            } else {
+                0
+            };
+            cpu.regs.set_al(v);
+        }
         0x0E => {
             let page = bda::read8(bus, bda::VIDEO_PAGE);
             teletype(bus, al, page, bl);
@@ -826,3 +936,5 @@ fn state_info<B: Bus>(cpu: &mut Cpu, bus: &mut B) {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests13;

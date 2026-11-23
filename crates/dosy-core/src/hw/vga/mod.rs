@@ -1,10 +1,11 @@
 //! VGA: registers, DAC, 256 KiB VRAM (4 planes), the `A0000–BFFFF` window,
 //! display timing (input status 1) and frame production at vretrace.
 //!
-//! Graphics modes (mode 13h, planar, latches, write modes 1–3) arrive in
-//! 026/027; this module renders text modes.
+//! Renders text modes and 256-colour modes (13h). Planar 16-colour and
+//! CGA modes, latches and write modes 1–3 arrive in 027.
 
 pub mod font;
+mod gfx;
 mod text;
 
 #[cfg(test)]
@@ -218,13 +219,21 @@ impl Vga {
         (off < size).then_some(off as usize)
     }
 
+    /// Chain-4 (mode 13h): A0–A1 select the plane, the byte lands at
+    /// plane offset `addr & !3`.
+    fn chain4(&self) -> bool {
+        self.seq[4] & 8 != 0
+    }
+
     /// Odd/even addressing (text modes): A0 selects plane 0/1.
     fn odd_even(&self) -> bool {
         self.seq[4] & 4 == 0
     }
 
     fn mem_read(&self, off: usize) -> u8 {
-        if self.odd_even() {
+        if self.chain4() {
+            self.vram[(off & 3) * PLANE_SIZE + (off & !3) % PLANE_SIZE]
+        } else if self.odd_even() {
             let plane = (off & 1) | (self.gc[4] as usize & 2);
             self.vram[plane * PLANE_SIZE + (off & !1) % PLANE_SIZE]
         } else {
@@ -235,7 +244,12 @@ impl Vga {
 
     fn mem_write(&mut self, off: usize, val: u8) {
         let mask = self.seq[2] & 0xF;
-        if self.odd_even() {
+        if self.chain4() {
+            let p = off & 3;
+            if mask & (1 << p) != 0 {
+                self.vram[p * PLANE_SIZE + (off & !3) % PLANE_SIZE] = val;
+            }
+        } else if self.odd_even() {
             let plane = off & 1;
             for p in [plane, plane | 2] {
                 if mask & (1 << p) != 0 {
@@ -279,7 +293,14 @@ impl Vga {
 
     /// Render the current state now (vretrace does this automatically).
     pub fn render(&self) -> VideoFrame {
-        let mut f = text::render(self, self.frames);
+        let mut f = if self.ac[0x10] & 1 == 0 {
+            text::render(self, self.frames)
+        } else if self.ac[0x10] & 0x40 != 0 {
+            gfx::render256(self)
+        } else {
+            // Planar 16-colour / CGA graphics: 027.
+            VideoFrame::blank(640, 400)
+        };
         f.palette = self.palette();
         f.seq = self.frames;
         f
