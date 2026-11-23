@@ -173,6 +173,12 @@ fn overlay_copy_up_delete_rename() {
     assert_eq!(read(&mut d, "SAVES\\LEVELS\\LEVEL1.DAT"), b"L1");
     assert_eq!(read(&mut d, "SAVES\\SAVE.DAT"), b"save");
     assert_eq!(d.read_dir(&p("APPS\\DATA")), Err(DosError::PathNotFound));
+    // Renaming onto the moved-away lower path must not resurrect its
+    // old lower children.
+    d.mkdir(&p("FRESH")).unwrap();
+    d.rename(&p("FRESH"), &p("APPS\\DATA")).unwrap();
+    assert!(names(&mut d, "APPS\\DATA").is_empty());
+    d.rmdir(&p("APPS\\DATA")).unwrap();
     assert_eq!(
         d.rename(&p("README.TXT"), &p("SETUP.CFG")),
         Err(DosError::AccessDenied)

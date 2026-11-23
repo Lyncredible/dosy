@@ -245,8 +245,8 @@ impl<L: Drive, U: Drive> Drive for OverlayDrive<L, U> {
         }
         self.copy_up(from)?;
         self.upper_dirs(&to_parent)?;
-        // A whiteout under `to` would hide the moved entry's children.
-        self.whiteouts.retain(|w| !w.starts_with(to));
+        // Whiteouts at or under `to` stay: they only hide lower entries, and
+        // the moved entry now lives in the upper layer.
         self.upper.rename(from, to)?;
         self.whiteout(from);
         Ok(())
