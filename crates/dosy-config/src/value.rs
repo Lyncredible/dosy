@@ -38,6 +38,15 @@ pub enum PaddingColor {
     ExtendAlways,
 }
 
+/// `cpu`: emulated CPU generation (what detection code sees).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CpuKind {
+    I8086,
+    I186,
+    #[default]
+    I386,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TextRender {
     #[default]
@@ -76,6 +85,8 @@ macro_rules! enum_value {
 }
 
 enum_value!(bool, "bool", "true" => true, "false" => false);
+enum_value!(CpuKind, "cpu", "8086" => CpuKind::I8086, "186" => CpuKind::I186,
+    "386" => CpuKind::I386);
 enum_value!(Scale, "scale", "integer" => Scale::Integer, "fit" => Scale::Fit,
     "stretch" => Scale::Stretch);
 enum_value!(PaddingColor, "padding color", "background" => PaddingColor::Background,
@@ -246,6 +257,9 @@ mod tests {
         assert_eq!(u32::parse("12"), Ok(12));
         assert!(u32::parse("-1").is_err());
         assert!(NonZeroU32::parse("0").is_err());
+        assert_eq!(CpuKind::parse("186"), Ok(CpuKind::I186));
+        assert!(CpuKind::parse("286").is_err());
+        assert_eq!(CpuKind::I8086.show(), "8086");
         assert_eq!(f32::parse("13.5"), Ok(13.5));
         assert!(f32::parse("nan").is_err());
         assert_eq!(Percent::parse("100"), Ok(Percent(100)));

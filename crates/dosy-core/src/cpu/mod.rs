@@ -4,6 +4,7 @@
 pub mod alu;
 pub mod decode;
 mod exec;
+mod ext;
 pub mod flags;
 mod ops;
 pub mod regs;
@@ -12,6 +13,8 @@ pub mod regs;
 mod tests;
 #[cfg(test)]
 mod tests_8086;
+#[cfg(test)]
+mod tests_ext;
 
 pub use decode::{ModRm, Prefixes, Rep, Rm};
 pub use exec::condition;
@@ -38,6 +41,21 @@ pub const FLAGS_WRITABLE: u32 = flags::CF
     | flags::IOPL
     | flags::NT;
 
+/// Emulated CPU generation. All models run the 186 opcodes (the 8086 aliases
+/// in 60..6F / C0, C1, C8, C9 are not emulated); the model changes what
+/// CPU-detection code observes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CpuModel {
+    /// FLAGS 12..15 read 1; PUSH SP pushes the decremented SP; shift counts
+    /// are not masked; `0F` is POP CS.
+    I8086,
+    /// 8086 flags; 186 semantics otherwise; `0F` raises #UD (INT 6).
+    I186,
+    /// 386 in real mode: IOPL/NT writable, bit 15 reads 0, `0F` escapes.
+    #[default]
+    I386,
+}
+
 /// Outcome of one [`Cpu::step`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -58,6 +76,7 @@ pub enum CpuFault {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Cpu {
+    pub model: CpuModel,
     pub regs: Regs,
     pub sregs: SegRegs,
     /// EIP; always < 0x10000 in 16-bit code.
@@ -78,9 +97,21 @@ impl Cpu {
         cpu
     }
 
-    /// Power-on state: CS:IP = F000:FFF0, other registers 0.
+    pub fn with_model(model: CpuModel) -> Self {
+        let mut cpu = Self {
+            model,
+            ..Self::default()
+        };
+        cpu.reset();
+        cpu
+    }
+
+    /// Power-on state: CS:IP = F000:FFF0, other registers 0. Keeps `model`.
     pub fn reset(&mut self) {
-        *self = Self::default();
+        *self = Self {
+            model: self.model,
+            ..Self::default()
+        };
         self.sregs.set(Seg::Cs, 0xF000);
         self.ip = 0xFFF0;
         self.flags = flags::RESERVED1;
@@ -89,7 +120,7 @@ impl Cpu {
     /// Real-mode interrupt through the IVT at linear 0: push FLAGS, CS, IP,
     /// clear IF/TF and jump. Also wakes a halted CPU.
     pub fn interrupt<B: Bus>(&mut self, bus: &mut B, vector: u8) {
-        self.push16(bus, self.flags as u16);
+        self.push16(bus, self.flags16());
         self.push16(bus, self.sregs.get(Seg::Cs));
         self.push16(bus, self.ip as u16);
         self.flags &= !(flags::IF | flags::TF);
@@ -106,9 +137,23 @@ impl Cpu {
         self.ip = ip as u32;
     }
 
-    /// Low 16 bits of FLAGS as POPF/IRET/SAHF-style writes see them.
+    /// Low 16 bits of FLAGS as PUSHF / interrupts store them.
+    pub fn flags16(&self) -> u16 {
+        let f = self.flags as u16;
+        if self.model < CpuModel::I386 {
+            f | 0xF000
+        } else {
+            f
+        }
+    }
+
+    /// Low 16 bits of FLAGS as POPF/IRET-style writes see them.
     pub fn set_flags16(&mut self, v: u16) {
-        self.flags = (self.flags & !0xFFFF) | (v as u32 & FLAGS_WRITABLE) | flags::RESERVED1;
+        let mut writable = FLAGS_WRITABLE;
+        if self.model < CpuModel::I386 {
+            writable &= !(flags::IOPL | flags::NT);
+        }
+        self.flags = (self.flags & !0xFFFF) | (v as u32 & writable) | flags::RESERVED1;
     }
 
     // --- Memory, with offsets wrapping inside the segment. ---

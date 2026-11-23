@@ -7,7 +7,7 @@
 use super::alu;
 use super::flags::{self, AF, CF, DF, IF, OF, PF, SF, ZF};
 use super::regs::{AX, BX, CX, DX, Seg};
-use super::{Cpu, CpuFault, Flags, Prefixes, Rep, Rm, Step};
+use super::{Cpu, CpuFault, CpuModel, Flags, Prefixes, Rep, Rm, Step};
 use crate::bus::Bus;
 use crate::hle::HleId;
 
@@ -52,6 +52,8 @@ impl Cpu {
                 0x64 => pfx.seg = Some(Seg::Fs),
                 0x65 => pfx.seg = Some(Seg::Gs),
                 0xF0 => pfx.lock = true,
+                // Pre-386, F1 decodes as another LOCK.
+                0xF1 if self.model < CpuModel::I386 => pfx.lock = true,
                 0xF2 => pfx.rep = Rep::Repne,
                 0xF3 => pfx.rep = Rep::Rep,
                 op => break op,
@@ -166,7 +168,12 @@ impl Cpu {
             }
 
             // --- Stack ---
-            // PUSH SP pushes the value before the decrement (286+ behaviour).
+            // PUSH SP pushes the value before the decrement (286+); the
+            // 8086 pushes the decremented value.
+            0x54 if self.model == CpuModel::I8086 => {
+                let v = self.regs.sp().wrapping_sub(2);
+                self.push16(bus, v);
+            }
             0x50..=0x57 => self.push16(bus, self.regs.get16((op & 7) as usize)),
             0x58..=0x5F => {
                 let v = self.pop16(bus);
@@ -176,7 +183,6 @@ impl Cpu {
                 let s = Seg::from_index((op >> 3) as usize)?;
                 self.push16(bus, self.sregs.get(s));
             }
-            // 0F (POP CS on 8086) is the two-byte escape on 286+ (025).
             0x07 | 0x17 | 0x1F => {
                 let s = Seg::from_index((op >> 3) as usize)?;
                 let v = self.pop16(bus);
@@ -190,7 +196,7 @@ impl Cpu {
                 let v = self.pop16(bus);
                 self.write_rm16(bus, m.rm, v);
             }
-            0x9C => self.push16(bus, self.flags as u16),
+            0x9C => self.push16(bus, self.flags16()),
             0x9D => {
                 let v = self.pop16(bus);
                 self.set_flags16(v);
@@ -600,7 +606,7 @@ impl Cpu {
             0xD8..=0xDF => {
                 self.decode_modrm(bus, pfx);
             }
-            _ => return None,
+            _ => return self.exec_ext(bus, op, pfx),
         }
         Some(Step::Ok)
     }
