@@ -338,8 +338,9 @@ fn process_scancode<B: Bus>(bus: &mut B, code: u8) -> bool {
         }
         (0x3A, false) => toggle(&mut f1, &mut f2, CAPS, make),
         (0x45, false) => toggle(&mut f1, &mut f2, NUM, make),
-        // Ctrl-Break (E0 46 with Ctrl; plain 46 with Ctrl on old BIOSes).
-        (0x46, _) if f1 & CTRL != 0 => {
+        // Ctrl-Break: E0 46 (only ever sent for Ctrl+Pause/Break), or plain
+        // 46 with Ctrl held (Ctrl+Scroll Lock on old keyboards).
+        (0x46, e0) if e0 || f1 & CTRL != 0 => {
             if make {
                 brk = true;
                 flush(bus);

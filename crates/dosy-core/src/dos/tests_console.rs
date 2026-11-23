@@ -310,6 +310,19 @@ fn ctrl_break_goes_through_int1b() {
     }
     assert!(bda::read8(&mut t.bus, kbd::BREAK_FLAG) & 0x80 != 0);
     assert_eq!(kbd::peek_key(&mut t.bus), Some(0));
+    // The break code alone (E0 46 / E0 C6) also counts; its release is quiet.
+    for (code, brk) in [
+        (0x9D, false),
+        (0xE0, false),
+        (0x46, true),
+        (0xE0, false),
+        (0xC6, false),
+    ] {
+        t.bus.io_in.insert(0x60, code);
+        assert_eq!(kbd::int09(&mut t.bus), brk, "{code:02X}");
+    }
+    let scroll = bda::read8(&mut t.bus, bda::KBD_FLAGS1) & 0x10;
+    assert_eq!(scroll, 0, "Scroll Lock untouched");
     t.dos.callback(ID_INT1B, &mut t.cpu, &mut t.bus);
     // The next console call reports ^C; at top level INT 23h just returns.
     assert_eq!(t.call(0x0200, b'x' as u16), HleResult::Done);
