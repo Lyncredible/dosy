@@ -179,10 +179,7 @@ impl Shell {
     /// does, so output that ends without one still gets its own line).
     fn prompt<B: Bus>(&mut self, dos: &Dos, bus: &mut B) {
         if std::mem::take(&mut self.ran) {
-            out(
-                bus, b"
-",
-            );
+            out(bus, b"\n");
         }
         let d = dos.current_drive(bus);
         let mut p = cwd_string(dos, d);
