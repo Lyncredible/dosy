@@ -236,3 +236,26 @@ fn int19_halts() {
     handle(INT19, &mut cpu, &mut bus);
     assert!(cpu.halted);
 }
+
+#[test]
+fn install_on_hardware_starts_the_18_hz_timer() {
+    let mut hw = crate::hw::Hardware::new();
+    install(&mut hw);
+    let mut irq0 = 0;
+    while let Some(t) = hw.sched.next_due().filter(|&t| t <= 1_000_000_000) {
+        hw.advance_to(t);
+        hw.fire_due();
+        if hw.pic.pending_vector() == Some(0x08) {
+            hw.pic.acknowledge();
+            hw.io_out8(0x20, 0x20);
+            irq0 += 1;
+        }
+    }
+    assert_eq!(irq0, 18);
+    // Keyboard IRQ unmasked, IRQ3 masked.
+    assert_eq!(hw.io_in8(0x21), MASTER_IMR);
+    hw.irq.pulse(3);
+    hw.irq.pulse(1);
+    hw.io_in8(0x21);
+    assert_eq!(hw.pic.pending_vector(), Some(0x09));
+}
