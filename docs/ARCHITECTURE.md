@@ -189,6 +189,14 @@ pub fn install_stub<B: Bus>(bus: &mut B, id: HleId, kind: StubKind) -> u32;  // 
   (child PSP INT 22h + pushed `Process { psp, ss, sp, flags }`). The child
   inherits the parent's JFT. `Dos::terminate` pops it, closes the child's
   handles, frees its blocks, restores INT 22h–24h and resumes the parent.
+- Console (`dos/console.rs`): INT 21h 01h–0Ch write via handle 1 (so
+  they follow redirection) and read the BIOS keyboard buffer, returning
+  `Retry` while empty; partial lines live in `Dos::console`. CON output uses
+  `bios::video::teletype`. ^C (key or INT 1Bh flag set by BIOS Ctrl-Break)
+  prints `^C` and issues INT 23h returning to the INT 21h callback, so an
+  IRET restarts the call; the default INT 23h ends the current child.
+  Device names (`CON`, `NUL`, `PRN`, `AUX`, `CLOCK$`, `LPTn`, `COMn`) open
+  as devices from any directory, any extension.
 - Top-level exit: terminating with no `Process` left, or reaching the root
   PSP's INT 22h stub, sets `Dos::exit_code`; `run_for` then returns
   `RunExit::Exited(code)` (sticky). The shell (021) gives its children its
