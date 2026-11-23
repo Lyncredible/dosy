@@ -22,3 +22,10 @@ Character I/O through DOS: keyboard in, screen out, devices CON/NUL.
 - [ ] Tests: `AH=09` string to text memory, `0Ah` line with backspace,
       write to handle 1, redirect-ready (handle 1 can point to a file),
       Retry when no key.
+
+## Review follow-ups
+- [ ] Ctrl-Break goes to INT 1Bh, and the BIOS handler sets the break flag
+      that drives DOS ^C handling (INT 23h on console I/O when BREAK is on).
+- [ ] Device names resolve by path: `NUL`, `CON`, `PRN`, `AUX` (with or
+      without a directory or extension) open as devices via 3Dh. Handles 0–4
+      are wired to the real devices (CON, CON, CON, AUX, PRN).

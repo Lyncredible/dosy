@@ -31,3 +31,7 @@ Boot to a `Z:\>` / `C:\>` prompt and run commands and programs.
       shell itself exits (`EXIT` at top level) or a program runs without a
       shell, the machine stops with a defined `RunExit`. It must not warn and
       continue.
+- [ ] The shell gives each child a real resume point: the parent return
+      address in the child's PSP points back into the shell stub. Then
+      `RunExit::Exited` happens only when the shell itself exits, never when a
+      child terminates.
