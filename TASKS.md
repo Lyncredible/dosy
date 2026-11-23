@@ -32,7 +32,7 @@ all its dependencies are `done`.
 | 016 | INT 10h video BIOS | todo | 010, 015 | — | [016](tasks/016-int10.md) |
 | 017 | DOS kernel core | done | 002 | worker-4 | [017](tasks/017-dos-kernel.md) |
 | 018 | DOS file and directory I/O | done | 004, 017 | worker-4 | [018](tasks/018-dos-file-io.md) |
-| 019 | COM/EXE loader and EXEC | todo | 018 | — | [019](tasks/019-dos-exec.md) |
+| 019 | COM/EXE loader and EXEC | done | 018 | worker-4 | [019](tasks/019-dos-exec.md) |
 | 020 | DOS console I/O and character devices | todo | 016, 017 | — | [020](tasks/020-dos-console.md) |
 | 021 | Built-in shell and MOUNT | todo | 011, 013, 019, 020 | — | [021](tasks/021-shell.md) |
 | 022 | Emulation thread, pacing and CLI | todo | 012, 013 | — | [022](tasks/022-app-emu-thread.md) |

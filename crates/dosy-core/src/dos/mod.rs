@@ -9,6 +9,7 @@
 //!
 //! Then the MCB chain from `FIRST_MCB` to the top of conventional memory.
 
+pub mod exec;
 pub mod files;
 mod find;
 pub mod mcb;
@@ -18,6 +19,8 @@ pub mod time;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_exec;
 #[cfg(test)]
 mod tests_files;
 
@@ -81,6 +84,8 @@ pub struct Process {
     /// INT 22h address.
     pub ss: u16,
     pub sp: u16,
+    /// Parent's FLAGS (CF is cleared on return).
+    pub flags: u16,
 }
 
 /// Host-side kernel state.
@@ -94,6 +99,8 @@ pub struct Dos {
     pub sft: Vec<Option<SftEntry>>,
     /// FindFirst directories, indexed by the id kept in the DTA.
     search_dirs: Vec<(u8, DosPath)>,
+    /// Set when the top-level process ends (see [`Dos::exit_code`]).
+    exited: Option<u8>,
     /// INT 21h/58h strategy word as last set (see `Strategy::from_dos`).
     pub strategy: u16,
     pub date: Date,
@@ -223,6 +230,7 @@ impl Dos {
         psp::create_psp(bus, root, root + ROOT_PARAS, root, env);
         self.root_psp = root;
         self.processes.clear();
+        self.exited = None;
         self.sft = files::default_sft();
         self.set_current_psp(bus, root);
         self.set_dta(bus, root, psp::TAIL);
@@ -248,11 +256,20 @@ impl Dos {
         match id {
             ID_INT21 => return self.int21(cpu, bus),
             ID_INT20 => self.terminate(cpu, bus, 0, 0),
+            // Reached when the root process (or a program run without a
+            // shell) terminates: nothing is left to return to.
+            ID_INT22 => self.exited = Some(bus.read8(sda(SDA_RETURN_CODE))),
             ID_INT24 => cpu.regs.set_al(3), // fail
             ID_INT23 | ID_INT28 | ID_INT2F => {}
             _ => self.warn_once(id.0, || format!("unhandled DOS callback {:#06x}", id.0)),
         }
         HleResult::Done
+    }
+
+    /// Return code of the top-level process once it has terminated; the
+    /// machine stops with `RunExit::Exited`.
+    pub fn exit_code(&self) -> Option<u8> {
+        self.exited
     }
 
     fn warn_once(&mut self, key: u16, msg: impl FnOnce() -> String) {
@@ -365,6 +382,27 @@ impl Dos {
                     }
                 }
             }
+            0x31 => {
+                let p = self.current_psp(bus);
+                let keep = cpu.regs.dx().max(psp::PARAS);
+                let _ = mcb::resize(bus, FIRST_MCB, p, keep);
+                self.terminate(cpu, bus, al, 3);
+            }
+            0x4B => {
+                let res = self.int21_exec(cpu, bus);
+                if al == 0 {
+                    // The IRET frame is gone; report on the CPU directly.
+                    if let Err(e) = res {
+                        cpu.regs.set_ax(e.code());
+                        cpu.flags |= flags::CF;
+                    }
+                } else {
+                    match res {
+                        Ok(()) => ok(cpu, bus),
+                        Err(e) => fail(cpu, bus, e.code()),
+                    }
+                }
+            }
             0x4C => self.terminate(cpu, bus, al, 0),
             0x4D => {
                 cpu.regs.set_ax(bus.read16(sda(SDA_RETURN_CODE)));
@@ -464,7 +502,7 @@ impl Dos {
         bus.write16(sda(SDA_RETURN_CODE), (kind as u16) << 8 | code as u16);
         let child = self.current_psp(bus);
         let Some(frame) = self.processes.pop() else {
-            self.warn_once(0xFFFF, || "root process terminated; ignored".into());
+            self.exited = Some(code);
             return;
         };
         if frame.psp != child {
@@ -486,6 +524,7 @@ impl Dos {
         let ret_ip = bus.read16(p(psp::INT22));
         let ret_cs = bus.read16(p(psp::INT22 + 2));
         if kind != 3 {
+            self.close_all(bus, frame.psp);
             if let Err(e) = mcb::free_owned(bus, FIRST_MCB, frame.psp) {
                 log::warn!("terminate: MCB chain error {e}");
             }
@@ -494,6 +533,7 @@ impl Dos {
         self.set_dta(bus, parent, psp::TAIL);
         cpu.sregs.set(Seg::Ss, frame.ss);
         cpu.regs.set_sp(frame.sp);
+        cpu.set_flags16(frame.flags & !(flags::CF as u16));
         cpu.far_jump(ret_cs, ret_ip);
     }
 }
