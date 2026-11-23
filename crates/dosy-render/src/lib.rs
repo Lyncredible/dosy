@@ -53,6 +53,13 @@ impl fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
+/// Backends to create an `Instance` with: `WGPU_BACKEND` if set, else the
+/// primary ones (Vulkan, Metal, DX12). The GL backend is opt-in because its
+/// probing can hang adapter creation on some Windows setups.
+pub fn default_backends() -> wgpu::Backends {
+    wgpu::Backends::from_env().unwrap_or(wgpu::Backends::PRIMARY)
+}
+
 /// Creates a device and queue on `adapter` with downlevel-friendly limits.
 pub fn request_device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue), RenderError> {
     let desc = wgpu::DeviceDescriptor {

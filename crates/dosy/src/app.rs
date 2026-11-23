@@ -1,4 +1,5 @@
-//! winit event loop: one window, one renderer. Space cycles test patterns.
+//! winit event loop on the main thread: window, renderer, and the bridge to
+//! the emulation thread. Space cycles test patterns (until VGA lands).
 
 use std::sync::Arc;
 
@@ -13,7 +14,10 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::cli::render_config;
-use crate::pattern;
+use crate::emu::{self, EmuEvent, EmuHandle, EmuSetup, HostEvent};
+use crate::mailbox::Mailbox;
+
+const TITLE: &str = "dosy";
 
 struct Gpu {
     window: Arc<Window>,
@@ -22,29 +26,39 @@ struct Gpu {
 
 struct App {
     config: Config,
-    frames: Vec<VideoFrame>,
-    current: usize,
     gpu: Option<Gpu>,
+    emu: EmuHandle,
+    frames: Arc<Mailbox<VideoFrame>>,
+    /// Last frame taken from the mailbox (buffer reused).
+    frame: VideoFrame,
+    has_frame: bool,
     error: Option<String>,
 }
 
-/// Opens the window and runs until it is closed.
-pub fn run(config: Config) -> Result<(), String> {
-    let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
-    let mut frames = vec![pattern::bars_320x200(), pattern::text_720x400()];
-    if !config.aspect {
-        for f in &mut frames {
-            f.display_aspect = (0, 0); // square pixels
-        }
-    }
+/// Starts the emulation thread, opens the window and runs until it closes.
+pub fn run(config: Config, setup: EmuSetup) -> Result<(), String> {
+    let event_loop = EventLoop::<EmuEvent>::with_user_event()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let proxy = event_loop.create_proxy();
+    let frames = Arc::new(Mailbox::new(VideoFrame::blank(1, 1)));
+    let emu = emu::spawn(setup, frames.clone(), move |e| {
+        // Fails only once the event loop is gone (shutting down).
+        let _ = proxy.send_event(e);
+    })
+    .map_err(|e| format!("cannot start emulation thread: {e}"))?;
     let mut app = App {
         config,
-        frames,
-        current: 0,
         gpu: None,
+        emu,
+        frames,
+        frame: VideoFrame::blank(1, 1),
+        has_frame: false,
         error: None,
     };
-    event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
+    let result = event_loop.run_app(&mut app).map_err(|e| e.to_string());
+    app.emu.shutdown();
+    result?;
     app.error.map_or(Ok(()), Err)
 }
 
@@ -56,7 +70,7 @@ impl App {
 
     fn init(&mut self, event_loop: &ActiveEventLoop) -> Result<Gpu, String> {
         let attrs = Window::default_attributes()
-            .with_title("dosy")
+            .with_title(TITLE)
             .with_inner_size(LogicalSize::new(960.0, 720.0));
         let window = Arc::new(event_loop.create_window(attrs).map_err(|e| e.to_string())?);
         let renderer = self.make_renderer(event_loop, &window)?;
@@ -71,10 +85,11 @@ impl App {
         event_loop: &ActiveEventLoop,
         window: &Arc<Window>,
     ) -> Result<Renderer, String> {
-        let instance =
-            wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(
-                Box::new(event_loop.owned_display_handle()),
-            ));
+        let mut desc = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(
+            event_loop.owned_display_handle(),
+        ));
+        desc.backends = dosy_render::default_backends();
+        let instance = wgpu::Instance::new(desc);
         let surface = instance
             .create_surface(window.clone())
             .map_err(|e| e.to_string())?;
@@ -82,12 +97,29 @@ impl App {
         let mut renderer = Renderer::new(&instance, surface, (size.width, size.height))
             .map_err(|e| e.to_string())?;
         renderer.set_config(render_config(&self.config, window.scale_factor()));
-        renderer.upload(&self.frames[self.current]);
+        if self.has_frame {
+            renderer.upload(&self.frame);
+        }
         Ok(renderer)
+    }
+
+    /// Takes the newest frame from the mailbox and uploads it.
+    fn pull_frame(&mut self) {
+        if !self.frames.take(&mut self.frame) {
+            return;
+        }
+        if !self.config.aspect {
+            self.frame.display_aspect = (0, 0); // square pixels
+        }
+        self.has_frame = true;
+        if let Some(gpu) = &mut self.gpu {
+            gpu.renderer.upload(&self.frame);
+            gpu.window.request_redraw();
+        }
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<EmuEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.gpu.is_none() {
             match self.init(event_loop) {
@@ -97,10 +129,25 @@ impl ApplicationHandler for App {
         }
     }
 
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: EmuEvent) {
+        match event {
+            EmuEvent::Frame => self.pull_frame(),
+            EmuEvent::Paused(why) => {
+                if let Some(gpu) = &self.gpu {
+                    gpu.window.set_title(&format!("{TITLE} - paused: {why}"));
+                }
+                eprintln!("dosy: paused: {why}");
+            }
+        }
+    }
+
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(gpu) = &mut self.gpu else { return };
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                self.emu.shutdown();
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => {
                 gpu.renderer.resize(size.width, size.height);
                 gpu.window.request_redraw();
@@ -136,11 +183,7 @@ impl ApplicationHandler for App {
                         ..
                     },
                 ..
-            } => {
-                self.current = (self.current + 1) % self.frames.len();
-                gpu.renderer.upload(&self.frames[self.current]);
-                gpu.window.request_redraw();
-            }
+            } => self.emu.send(HostEvent::NextPattern),
             _ => {}
         }
     }

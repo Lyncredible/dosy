@@ -284,6 +284,8 @@ renderer (wgpu)    <--latest frame (mailbox) + EventLoopProxy wake
   (e.g. `rtrb`); the cpal callback drains it and outputs silence on underrun.
   Ring fill level may nudge pacing by a fraction of a percent.
 - wgpu/winit stay on the main thread (required on macOS).
+- wgpu instances use `dosy_render::default_backends()` (`WGPU_BACKEND`, else
+  Vulkan/Metal/DX12); GL probing can hang adapter creation on Windows.
 
 ## Renderer (`dosy-render`)
 

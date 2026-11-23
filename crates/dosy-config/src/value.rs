@@ -101,6 +101,40 @@ impl Value for u32 {
     }
 }
 
+/// `cycles`: instructions per emulated millisecond, or `max` (flat out).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cycles {
+    Fixed(NonZeroU32),
+    Max,
+}
+
+impl Cycles {
+    /// The fixed rate, or `None` for `max`.
+    pub fn per_ms(self) -> Option<u32> {
+        match self {
+            Cycles::Fixed(n) => Some(n.get()),
+            Cycles::Max => None,
+        }
+    }
+}
+
+impl Value for Cycles {
+    fn parse(s: &str) -> Result<Self, String> {
+        if s == "max" {
+            return Ok(Cycles::Max);
+        }
+        s.parse()
+            .map(Cycles::Fixed)
+            .map_err(|_| format!("invalid cycles {s:?}; expected a positive integer or max"))
+    }
+    fn show(&self) -> String {
+        match self {
+            Cycles::Fixed(n) => n.to_string(),
+            Cycles::Max => "max".into(),
+        }
+    }
+}
+
 impl Value for NonZeroU32 {
     fn parse(s: &str) -> Result<Self, String> {
         s.parse()
