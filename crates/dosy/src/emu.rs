@@ -124,8 +124,7 @@ impl Emu {
             machine.mount(letter, drive);
         }
         machine.set_rtc(setup.rtc_unix_secs);
-        // Shell (021): replace with `machine.start_shell(&setup.autoexec)`.
-        run_first_program(&mut machine, &setup.autoexec);
+        machine.start_shell(&setup.autoexec);
         Self {
             machine,
             pacer: setup.cycles_per_ms.map(Pacer::new),
@@ -201,7 +200,7 @@ impl Emu {
             RunExit::Halted => "CPU halted".to_string(),
             RunExit::Fault(f) => format!("CPU fault: {f:?}"),
             RunExit::UnhandledCallback(id) => format!("unhandled HLE callback {id:?}"),
-            RunExit::Exited(code) => format!("program exited with code {code}"),
+            RunExit::Exited(code) => format!("shell exited with code {code}"),
         };
         self.paused = true;
         (self.wake)(EmuEvent::Paused(why));
@@ -216,7 +215,11 @@ impl Emu {
         if Some(frame.seq) == self.last_seq {
             return;
         }
-        if self.pacer.is_none() && self.last_present.is_some_and(|t| t.elapsed() < MIN_PRESENT) {
+        // Always show the final frame when the machine just paused.
+        if self.pacer.is_none()
+            && !self.paused
+            && self.last_present.is_some_and(|t| t.elapsed() < MIN_PRESENT)
+        {
             return;
         }
         self.last_seq = Some(frame.seq);
@@ -224,29 +227,6 @@ impl Emu {
         self.out.clone_from(frame);
         self.frames.publish(&mut self.out);
         (self.wake)(EmuEvent::Frame);
-    }
-}
-
-/// Interim until the shell (021): run the first non-drive-switch line of
-/// `lines` as a program via `Machine::exec`. A bare `X:` line sets the
-/// drive used for paths without one.
-fn run_first_program(machine: &mut Machine, lines: &[String]) {
-    let mut drive = None;
-    for line in lines.iter().map(|l| l.trim()) {
-        let b = line.as_bytes();
-        if b.len() == 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {
-            drive = Some(line);
-            continue;
-        }
-        let (prog, tail) = line.split_once(' ').unwrap_or((line, ""));
-        let path = match drive {
-            Some(d) if !prog.contains(':') => format!("{d}\\{}", prog.trim_start_matches('\\')),
-            _ => prog.to_string(),
-        };
-        if let Err(e) = machine.exec(&path, tail) {
-            eprintln!("dosy: cannot run {path}: {e:?}");
-        }
-        return;
     }
 }
 
@@ -277,17 +257,49 @@ mod tests {
     }
 
     #[test]
-    fn no_program_halts_at_int19() {
+    fn boots_to_shell_prompt() {
         let frames = Arc::new(Mailbox::new(VideoFrame::blank(1, 1)));
         let (wtx, wrx) = mpsc::channel();
         let mut s = setup(Some(3000));
+        s.mounts.clear();
         s.autoexec.clear();
+        let mut h = spawn(s, frames.clone(), move |e| {
+            let _ = wtx.send(e);
+        })
+        .unwrap();
+        // `Z:\>` in light grey (7) on the top text row (16 scanlines).
+        let mut f = VideoFrame::blank(1, 1);
+        let lit = |f: &VideoFrame| f.width == 720 && f.pixels[..720 * 16].contains(&7);
+        while !lit(&f) {
+            match wrx.recv_timeout(Duration::from_secs(5)).unwrap() {
+                EmuEvent::Frame => {
+                    frames.take(&mut f);
+                }
+                EmuEvent::Paused(why) => panic!("paused: {why}"),
+            }
+        }
+        h.shutdown();
+    }
+
+    #[test]
+    fn shell_exit_pauses() {
+        let frames = Arc::new(Mailbox::new(VideoFrame::blank(1, 1)));
+        let (wtx, wrx) = mpsc::channel();
+        let mut s = setup(Some(3000));
+        s.autoexec = vec!["exit".into()];
         let mut h = spawn(s, frames, move |e| {
             let _ = wtx.send(e);
         })
         .unwrap();
-        let ev = wrx.recv_timeout(Duration::from_secs(5)).unwrap();
-        assert_eq!(ev, EmuEvent::Paused("CPU halted".into()));
+        loop {
+            match wrx.recv_timeout(Duration::from_secs(5)).unwrap() {
+                EmuEvent::Frame => {}
+                EmuEvent::Paused(why) => {
+                    assert_eq!(why, "shell exited with code 0");
+                    break;
+                }
+            }
+        }
         h.shutdown();
     }
 

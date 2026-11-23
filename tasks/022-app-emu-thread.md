@@ -1,6 +1,6 @@
 # 022 — Emulation thread, pacing and CLI
 
-- **Status:** in-progress
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 012, 013
 - **Owner:** worker-2
@@ -19,7 +19,7 @@ Run `Machine` on its own thread at real-time speed and show its frames.
 - Clean shutdown on window close; fault → message in title + pause.
 
 ## Acceptance criteria
-- [ ] Boots to the shell prompt in a window (once 021 has landed; before
+- [x] Boots to the shell prompt in a window (once 021 has landed; before
       that, shows the BIOS text screen).
 - [x] Unit tests for the pacing calculator and mailbox.
 
@@ -34,10 +34,5 @@ Done (PR 2): `Machine::frame()` published when its `seq` changes (vsync),
 at most every 14 ms in `cycles = max`; test patterns removed. Mounts open
 in the main thread via `open_mount` (a bad PATH exits 2, bad config mounts
 warn); `.zip` works once 028 extends `open_mount`. `cpu` → `cpu_model`.
-Interim until 021: the first non-`X:` autoexec/`-c` line runs via
-`Machine::exec`.
-
-Remaining:
-- After 021: replace `run_first_program` with
-  `machine.start_shell(&setup.autoexec)` (agreed with 021's author), then
-  check off "boots to the shell prompt".
+Autoexec/`-c` lines run in the 021 shell via `Machine::start_shell`;
+shell `EXIT` pauses with a title message.
