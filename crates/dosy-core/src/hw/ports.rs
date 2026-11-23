@@ -28,7 +28,9 @@ impl Hardware {
         match port {
             0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.read(port, ctx!(self)),
             0x40..=0x43 => self.pit.read(port, ctx!(self)),
+            0x60 | 0x64 => self.kbd.read(port, ctx!(self)),
             0x61 => self.port61_in(),
+            0x70 | 0x71 => self.cmos.read(port, ctx!(self)),
             0x92 => (self.mem.a20() as u8) << 1,
             0x3B0..=0x3DF => self.vga.read(port, ctx!(self)),
             _ => self.unclaimed_in(port),
@@ -39,17 +41,35 @@ impl Hardware {
         match port {
             0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.write(port, val, ctx!(self)),
             0x40..=0x43 => self.pit.write(port, val, ctx!(self)),
+            0x60 | 0x64 => self.kbd_out(port, val),
             0x61 => self.port61_out(val),
+            0x70 | 0x71 => self.cmos.write(port, val, ctx!(self)),
             0x92 => self.mem.set_a20(val & 0x02 != 0), // fast A20; reset bit ignored
             0x3B0..=0x3DF => self.vga.write(port, val, ctx!(self)),
             _ => self.unclaimed_out(port, val),
         }
     }
 
+    /// 8042 writes; output-port A20 changes go to the same gate as 92h.
+    fn kbd_out(&mut self, port: u16, val: u8) {
+        self.kbd.sync_a20(self.mem.a20());
+        self.kbd.write(port, val, ctx!(self));
+        if let Some(on) = self.kbd.take_a20_change() {
+            self.mem.set_a20(on);
+        }
+    }
+
+    /// Host key input: set-1 bytes into the 8042 queue (IRQ1 per byte).
+    pub fn push_scancodes(&mut self, codes: &[u8]) {
+        self.kbd.push_scancodes(codes, ctx!(self));
+        self.sync_irqs();
+    }
+
     pub(super) fn device_event(&mut self, ev: Event) {
         match ev.dev {
             DeviceId::PIT => self.pit.event(ev.kind, ctx!(self, ev.at)),
             DeviceId::VGA => self.vga.event(ev.kind, ctx!(self, ev.at)),
+            DeviceId::KBD => self.kbd.event(ev.kind, ctx!(self, ev.at)),
             _ => log::warn!("event for unknown device {:?} kind {}", ev.dev, ev.kind),
         }
     }

@@ -1,5 +1,7 @@
 //! The real machine's [`Bus`]: memory, devices, IRQ lines and the scheduler.
 
+pub mod cmos;
+pub mod kbd;
 pub mod pic;
 pub mod pit;
 mod ports;
@@ -8,6 +10,8 @@ pub mod vga;
 
 use std::collections::HashSet;
 
+pub use cmos::Cmos;
+pub use kbd::Kbc;
 pub use pic::Pic;
 pub use pit::Pit;
 pub use sched::{DeviceId, Event, Scheduler};
@@ -89,6 +93,8 @@ pub struct Hardware {
     pub sched: Scheduler,
     pub pic: Pic,
     pub pit: Pit,
+    pub kbd: Kbc,
+    pub cmos: Cmos,
     /// Port 61h bits 0–3 as last written.
     port61: u8,
     now: u64,
@@ -115,6 +121,8 @@ impl Hardware {
             sched: Scheduler::new(),
             pic: Pic::new(),
             pit: Pit::new(),
+            kbd: Kbc::new(),
+            cmos: Cmos::new(),
             port61: 0,
             now: 0,
             cycles_per_ms: DEFAULT_CYCLES_PER_MS,

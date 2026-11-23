@@ -97,6 +97,12 @@ pub fn install<B: Bus>(bus: &mut B) {
     bus.io_out8(0x43, 0x36);
     bus.io_out8(0x40, 0x00);
     bus.io_out8(0x40, 0x00);
+    sync_ticks(bus);
+}
+
+/// Set the BDA tick count from the RTC time of day (0 if the RTC is not
+/// valid). Called at install and when the host injects a new time.
+pub fn sync_ticks<B: Bus>(bus: &mut B) {
     let ticks = rtc_ticks(bus).unwrap_or(0);
     bda::write32(bus, bda::TICKS, ticks);
 }

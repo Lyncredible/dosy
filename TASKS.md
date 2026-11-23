@@ -22,7 +22,7 @@ all its dependencies are `done`.
 | 006 | wgpu presenter with integer scaling | done | 000 | worker-2 | [006](tasks/006-render-core.md) |
 | 007 | Complete 8086 instruction set | done | 001, 002 | worker-1 | [007](tasks/007-cpu-8086.md) |
 | 008 | 8259 PIC and 8254 PIT | done | 003 | worker-3 | [008](tasks/008-pic-pit.md) |
-| 009 | 8042 keyboard controller, port 61h, CMOS/RTC | todo | 003 | — | [009](tasks/009-kbd-cmos.md) |
+| 009 | 8042 keyboard controller, port 61h, CMOS/RTC | done | 003 | worker-3 | [009](tasks/009-kbd-cmos.md) |
 | 010 | VGA registers, DAC and text mode | done | 003 | worker-1 | [010](tasks/010-vga-text.md) |
 | 011 | Host directory and single-file drives | done | 004 | worker-4 | [011](tasks/011-vfs-host.md) |
 | 012 | App window: winit + renderer + config | done | 005, 006 | worker-2 | [012](tasks/012-app-window.md) |

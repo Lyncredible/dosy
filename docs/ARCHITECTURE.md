@@ -259,7 +259,10 @@ impl Machine {
   the next event.
 - PIT (1.193182 MHz) counters are computed lazily from `now`; channel 0
   schedules IRQ0, channel 2 drives the speaker (`hw.pit.ch2_out(now)`,
-  `ch2_reload()`, `hw.speaker_enabled()`). Port 61h lives in `Hardware`. VGA schedules display/retrace
+  `ch2_reload()`, `hw.speaker_enabled()`). Port 61h lives in `Hardware`.
+- Keyboard: `Machine::key_event` → `hw.push_scancodes` → 8042 queue →
+  port 60h + IRQ1 → BIOS INT 09h. 8042 output-port A20 and port 92h share
+  `mem.set_a20`. CMOS time = injected base (`set_rtc`) + emulated `now`. VGA schedules display/retrace
   edges (~70 Hz) so port 3DAh status is time-accurate. RTC ticks from the
   injected base.
 

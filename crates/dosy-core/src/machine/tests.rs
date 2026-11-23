@@ -274,3 +274,33 @@ fn top_level_program_exit_stops_the_machine() {
     assert_eq!(m.run_for(10_000), RunExit::Exited(5), "sticky");
     assert!(m.dos.processes.is_empty());
 }
+
+#[test]
+fn key_event_flows_through_int09_to_int16() {
+    #[rustfmt::skip]
+    let mut m = machine(&[
+        0xB4, 0x00,             // L: mov ah, 0
+        0xCD, 0x16,             // int 16h
+        0x2E, 0xA3, 0x00, 0x02, // mov cs:[0200h], ax
+        0xB4, 0x00,             // mov ah, 0
+        0xCD, 0x16,             // int 16h
+        0x2E, 0xA3, 0x02, 0x02, // mov cs:[0202h], ax
+        0xFA, 0xF4,             // cli ; hlt
+    ]);
+    m.run_for(3000 * 10);
+    m.key_event(&[0x2A, 0x1E, 0x9E, 0xAA]); // shift-A
+    m.key_event(&[0xE0, 0x48, 0xE0, 0xC8]); // grey up
+    assert_eq!(m.run_for(3000 * 100), RunExit::Halted);
+    assert_eq!(m.hw.read16(linear(CODE, 0x200)), 0x1E41);
+    assert_eq!(m.hw.read16(linear(CODE, 0x202)), 0x4800);
+}
+
+#[test]
+fn set_rtc_sets_cmos_and_bios_ticks() {
+    let mut m = Machine::new(MachineConfig::default());
+    m.set_rtc(946_684_800 + 12 * 3600); // 2000-01-01 12:00:00
+    m.hw.io_out8(0x70, 0x04);
+    assert_eq!(m.hw.io_in8(0x71), 0x12);
+    let ticks = crate::bios::bda::read32(&mut m.hw, crate::bios::bda::TICKS);
+    assert_eq!(ticks, (12 * 3600 * 1_193_182u64 / 65_536) as u32);
+}
