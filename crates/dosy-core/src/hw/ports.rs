@@ -30,6 +30,7 @@ impl<M: Mmio> Hardware<M> {
             0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.read(port, ctx!(self)),
             0x40..=0x43 => self.pit.read(port, ctx!(self)),
             0x61 => self.port61_in(),
+            0x92 => (self.mem.a20() as u8) << 1,
             _ => self.unclaimed_in(port),
         }
     }
@@ -39,6 +40,7 @@ impl<M: Mmio> Hardware<M> {
             0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.write(port, val, ctx!(self)),
             0x40..=0x43 => self.pit.write(port, val, ctx!(self)),
             0x61 => self.port61_out(val),
+            0x92 => self.mem.set_a20(val & 0x02 != 0), // fast A20; reset bit ignored
             _ => self.unclaimed_out(port, val),
         }
     }

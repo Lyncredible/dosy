@@ -4,6 +4,7 @@
 //! See `docs/ARCHITECTURE.md` for the module layout and interfaces.
 
 pub mod audio;
+pub mod bios;
 pub mod bus;
 pub mod cpu;
 pub mod dos;

@@ -1,9 +1,9 @@
 # 015 — BIOS HLE core
 
-- **Status:** todo
+- **Status:** in-progress
 - **Milestone:** M1
 - **Depends on:** 002
-- **Owner:** —
+- **Owner:** worker-3
 
 ## Goal
 Enough PC BIOS for DOS and programs: BDA, IVT, and the core interrupts.
@@ -20,19 +20,26 @@ Enough PC BIOS for DOS and programs: BDA, IVT, and the core interrupts.
   INT 1A (00/01 ticks, 02/04 RTC via CMOS ports).
 - Handlers generic over `Bus`; INT 10 lives in 016.
 
+## Progress
+- Part 1: `install` (ROM, IVT, BDA, PIC/PIT init), INT 08/11/12/15/19/1A,
+  default IRQ EOI handlers, port 92h A20, robust `load_rom`. Done.
+  INT 15h/86h returns at once (no wait yet). INT 08h sends EOI before
+  chaining INT 1Ch (stub slots are 8 bytes).
+- Part 2: INT 09h and INT 16h (keyboard). Todo.
+
 ## Acceptance criteria
 - [ ] `FlatBus` tests per handler: tick rollover, key translation table
       (letters, shifted, ctrl, extended arrows → 00/E0 scan), buffer full,
       INT 16/00 Retry then Done.
 
 ## Review follow-ups
-- [ ] The PIC's power-on state is already post-BIOS (vectors 08h/70h, IMR
+- [x] The PIC's power-on state is already post-BIOS (vectors 08h/70h, IMR
       all unmasked). BIOS init should program the IMR the way a real BIOS
       leaves it: only the IRQs it services unmasked (timer, keyboard,
       cascade).
-- [ ] The PIT is unprogrammed at power-on, so BIOS init must program
+- [x] The PIT is unprogrammed at power-on, so BIOS init must program
       channel 0 for the 18.2 Hz tick: `43h ← 36h`, then `40h ← 00h, 00h`.
-- [ ] (Low priority) Make `Memory::load_rom` / `Hardware::load_rom` robust. Today they apply
+- [x] (Low priority) Make `Memory::load_rom` / `Hardware::load_rom` robust. Today they apply
       the A20 mask to the start address only and panic when the copy runs past
       the end of RAM. Mask or wrap per byte (or clip) and never panic. Add a
       test that loads across the 1 MiB and HMA end boundaries.
