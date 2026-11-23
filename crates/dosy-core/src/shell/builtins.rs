@@ -479,7 +479,7 @@ impl Shell {
         if path.to_ascii_uppercase().ends_with(b".BAT") {
             let (drive, file) = find_file(dos, bus, &path).expect("found above");
             let mut argv = vec![word.as_bytes().to_vec()];
-            argv.extend(args(rest));
+            argv.extend(super::batch::batch_args(rest));
             let call = std::mem::take(&mut self.calling);
             self.start_batch(drive, file, argv, call);
             return Flow::Continue;

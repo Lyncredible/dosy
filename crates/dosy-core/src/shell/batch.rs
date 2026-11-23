@@ -195,6 +195,8 @@ impl Shell {
                     if let Some(f) = self.frames.last_mut() {
                         f.pos = pos;
                     }
+                    // GOTO inside a FOR body ends the loop.
+                    self.pending.clear();
                     return;
                 }
             }
@@ -329,6 +331,31 @@ impl Shell {
     }
 }
 
+/// Batch parameters (`%1`…), as COMMAND.COM splits them: separators are
+/// whitespace, `,`, `;` and `=`; quotes group but are kept in the value.
+pub(super) fn batch_args(rest: &[u8]) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut cur = Vec::new();
+    let mut quoted = false;
+    for &c in rest {
+        match c {
+            b' ' | b'\t' | b',' | b';' | b'=' if !quoted => {
+                if !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+            }
+            _ => {
+                quoted ^= c == b'"';
+                cur.push(c);
+            }
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
 /// Replace every occurrence of `var` in `cmd` with `item`.
 fn replace(cmd: &[u8], var: &[u8], item: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -375,4 +402,16 @@ fn glob<B: Bus>(dos: &mut Dos, bus: &mut B, item: &[u8]) -> Vec<Vec<u8>> {
         .filter(|e| !e.attr.intersects(skip) && pat.matches(&e.name))
         .map(|e| [&item[..prefix_len], &e.name.to_bytes()].concat())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn batch_args_split_like_command_com() {
+        let a = batch_args(b" a,b;c=d \"e f\"  g");
+        let want: Vec<&[u8]> = vec![b"a", b"b", b"c", b"d", b"\"e f\"", b"g"];
+        assert_eq!(a, want);
+    }
 }
