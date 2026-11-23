@@ -67,6 +67,9 @@ fn round_trip_writes() {
     assert_eq!(f.seek(SeekFrom::Current(-100)).unwrap(), 0xFFFF_FFFF - 88);
     let mut buf = [0; 4];
     assert_eq!(f.read(&mut buf).unwrap(), 0);
+    // Writing or truncating there must not grow a huge host file.
+    assert_eq!(f.write(b"x"), Err(DosError::AccessDenied));
+    assert_eq!(f.set_len(0xFFFF_FFFF - 88), Err(DosError::AccessDenied));
     drop(f);
     assert_eq!(fs::read(t.0.join("NEW.TXT")).unwrap(), b"hello DOS");
     assert_eq!(d.stat(&p("new.txt")).unwrap().mtime, when);

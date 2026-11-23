@@ -22,6 +22,10 @@ use crate::{
 const TOTAL_BYTES: u64 = 2 << 30;
 const FREE_BYTES: u64 = 1 << 30;
 const MAX_FILE: u64 = u32::MAX as u64;
+/// Largest size a write or truncate may grow a host file to (FAT16's 2 GiB
+/// limit). Keeps a wrapped seek (e.g. to -1) plus a write or a CX=0
+/// truncate from creating a ~4 GiB sparse file on the host.
+const MAX_GROW: u64 = 0x7FFF_FFFF;
 
 /// Where writes to a zip mount go.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -465,8 +469,8 @@ impl DosFile for HostFile {
         if buf.is_empty() {
             return Ok(0);
         }
-        if self.pos + buf.len() as u64 > MAX_FILE {
-            return Err(DosError::InsufficientMemory);
+        if self.pos + buf.len() as u64 > MAX_GROW {
+            return Err(DosError::AccessDenied);
         }
         self.file
             .seek(io::SeekFrom::Start(self.pos))
@@ -485,8 +489,8 @@ impl DosFile for HostFile {
         if !self.mode.can_write() {
             return Err(DosError::AccessDenied);
         }
-        if len > MAX_FILE {
-            return Err(DosError::InsufficientMemory);
+        if len > MAX_GROW && len > self.len()? {
+            return Err(DosError::AccessDenied);
         }
         self.file.set_len(len).map_err(io_err)
     }
