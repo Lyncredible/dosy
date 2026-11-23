@@ -266,9 +266,11 @@ impl Machine {
   `ch2_reload()`, `hw.speaker_enabled()`). Port 61h lives in `Hardware`.
 - Keyboard: `Machine::key_event` → `hw.push_scancodes` → 8042 queue →
   port 60h + IRQ1 → BIOS INT 09h. 8042 output-port A20 and port 92h share
-  `mem.set_a20`. CMOS time = injected base (`set_rtc`) + emulated `now`. VGA schedules display/retrace
-  edges (~70 Hz) so port 3DAh status is time-accurate. RTC ticks from the
-  injected base.
+  `mem.set_a20`.
+- VGA schedules display/retrace edges (~70 Hz) so port 3DAh status is
+  time-accurate.
+- RTC: CMOS time = injected base (`Machine::set_rtc`) + emulated `now`;
+  `set_rtc` also resyncs the BIOS tick count.
 
 ## Threading model (app)
 
