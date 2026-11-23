@@ -1,27 +1,5 @@
 use super::*;
-
-/// Temporary directory removed on drop.
-struct Tmp(PathBuf);
-
-impl Tmp {
-    fn new(name: &str) -> Self {
-        let p = std::env::temp_dir().join(format!("dosy-vfs-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&p);
-        fs::create_dir_all(&p).unwrap();
-        Self(p)
-    }
-    fn put(&self, rel: &str, bytes: &[u8]) {
-        let p = self.0.join(rel);
-        fs::create_dir_all(p.parent().unwrap()).unwrap();
-        fs::write(p, bytes).unwrap();
-    }
-}
-
-impl Drop for Tmp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use crate::testutil::Tmp;
 
 fn p(s: &str) -> DosPath {
     DosPath::parse(s).unwrap()
@@ -119,6 +97,7 @@ fn read_only_enforcement() {
     let opts = MountOptions {
         read_only: true,
         label: "RO".into(),
+        ..Default::default()
     };
     let mut d = HostDrive::new(&t.0, &opts).unwrap();
     assert_eq!(read_all(&mut d, "FILE.TXT"), b"data");

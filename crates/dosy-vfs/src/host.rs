@@ -23,18 +23,47 @@ const TOTAL_BYTES: u64 = 2 << 30;
 const FREE_BYTES: u64 = 1 << 30;
 const MAX_FILE: u64 = u32::MAX as u64;
 
+/// Where writes to a zip mount go.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Overlay {
+    /// Read-only: writes fail.
+    #[default]
+    None,
+    /// Writes kept in memory, lost on exit.
+    Memory,
+    /// Writes stored in this host directory (created if missing).
+    Dir(PathBuf),
+}
+
 /// Options for [`open_mount`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MountOptions {
     pub read_only: bool,
     /// Volume label (up to 11 chars).
     pub label: String,
+    /// Zip mounts only.
+    pub overlay: Overlay,
 }
 
-/// Mount a host directory, or a single file as a drive holding just that
-/// file. (Zip archives are added by task 028.)
+/// Mount a host directory, a `.zip` archive (read-only, optionally with a
+/// writable overlay), or a single file as a drive holding just that file.
 pub fn open_mount(path: &Path, opts: &MountOptions) -> io::Result<Box<dyn Drive>> {
     let meta = fs::metadata(path)?;
+    let is_zip = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+    if meta.is_file() && is_zip {
+        let zip = crate::ZipDrive::open(path, &opts.label)?;
+        return Ok(match &opts.overlay {
+            Overlay::None => Box::new(zip),
+            Overlay::Memory => Box::new(crate::OverlayDrive::new(zip, crate::MemDrive::new())),
+            Overlay::Dir(dir) => {
+                fs::create_dir_all(dir)?;
+                let upper = HostDrive::new(dir, &MountOptions::default())?;
+                Box::new(crate::OverlayDrive::new(zip, upper))
+            }
+        });
+    }
     if meta.is_dir() {
         Ok(Box::new(HostDrive::new(path, opts)?))
     } else if meta.is_file() {
