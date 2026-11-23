@@ -202,6 +202,7 @@ impl Emu {
             RunExit::Halted => "CPU halted".to_string(),
             RunExit::Fault(f) => format!("CPU fault: {f:?}"),
             RunExit::UnhandledCallback(id) => format!("unhandled HLE callback {id:?}"),
+            RunExit::Exited(code) => format!("program exited with code {code}"),
         };
         self.paused = true;
         (self.wake)(EmuEvent::Paused(why));
