@@ -1,9 +1,9 @@
 # 006 — wgpu presenter with integer scaling
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 000
-- **Owner:** —
+- **Owner:** worker-2
 
 ## Goal
 Draw a `VideoFrame` to a surface crisply: palette lookup, aspect-correct
@@ -20,10 +20,10 @@ integer scaling, padding and background color.
 - Clear color from `RenderConfig { background, padding, scale }`.
 
 ## Acceptance criteria
-- [ ] Unit tests for `layout.rs` (320x200@4:3, 720x400, odd window sizes,
+- [x] Unit tests for `layout.rs` (320x200@4:3, 720x400, odd window sizes,
       padding larger than window).
-- [ ] Optional `#[ignore]` headless render test that reads back a texture.
-- [ ] Re-uploading frames of the same size reuses textures.
+- [x] Optional `#[ignore]` headless render test that reads back a texture.
+- [x] Re-uploading frames of the same size reuses textures.
 
 ## Notes
 - Update the Linux apt step in CI if wgpu needs packages for tests.

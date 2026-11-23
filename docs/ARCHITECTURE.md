@@ -25,7 +25,7 @@ crates/
   dosy-vfs     Drive/DosFile traits, host dir / file / zip /   deps: zip (deflate only)
                overlay drives, 8.3 name mapping
   dosy-config  Ghostty-style config parsing → typed Config     deps: none
-  dosy-render  wgpu presenter: scaling, palette, CRT, themes,  deps: dosy-core, wgpu
+  dosy-render  wgpu presenter: scaling, palette, CRT, themes,  deps: dosy-core, wgpu, pollster
                vector text
   dosy         app: winit, input mapping, cpal, threads, CLI   deps: all of the above
 ```
@@ -272,6 +272,13 @@ pass → present. Padding area is cleared to the theme background. Layout math
 (scale factor, viewport rect) is pure and unit-tested; GPU tests are
 `#[ignore]` in CI. Vector text mode renders `TextScreen` cells with a glyph
 atlas from a configured font instead of the indexed frame.
+
+API: `Renderer::new(&Instance, Surface<'static>, (w, h))` (blocks via
+pollster), `set_config(RenderConfig { background, padding, scale })`,
+`resize`, `upload(&VideoFrame)`, `render()`. `Presenter` is the
+surface-independent part (draws into any `TextureView`); `layout::viewport`
+is the pure scaling math. Integer scale works on the aspect-corrected size
+(width kept, height = width·aspect_h/aspect_w, e.g. 320x200 → 320x240).
 
 ## dosy-vfs
 

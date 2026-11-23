@@ -9,6 +9,8 @@ repository.workspace = true
 
 [dependencies]
 dosy-core.workspace = true
+wgpu.workspace = true
+pollster.workspace = true
 
 [lints]
 workspace = true

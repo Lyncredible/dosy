@@ -83,7 +83,7 @@ impl Memory {
     /// Mark `[start, end)` (page-aligned, below 1 MiB) as ROM or RAM.
     pub fn set_rom(&mut self, start: Addr, end: Addr, rom: bool) {
         assert!(
-            start % ROM_PAGE == 0 && end % ROM_PAGE == 0 && end <= 0x10_0000,
+            start.is_multiple_of(ROM_PAGE) && end.is_multiple_of(ROM_PAGE) && end <= 0x10_0000,
             "ROM range must be page-aligned below 1 MiB"
         );
         for p in (start / ROM_PAGE)..(end / ROM_PAGE) {

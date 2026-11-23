@@ -19,7 +19,7 @@ all its dependencies are `done`.
 | 003 | Memory, Hardware bus and scheduler | done | 000 | worker-3 | [003](tasks/003-memory-bus.md) |
 | 004 | VFS traits, DOS paths and MemDrive | done | 000 | worker-3 | [004](tasks/004-vfs-core.md) |
 | 005 | Ghostty-style config parser | done | 000 | worker-1 | [005](tasks/005-config.md) |
-| 006 | wgpu presenter with integer scaling | todo | 000 | — | [006](tasks/006-render-core.md) |
+| 006 | wgpu presenter with integer scaling | done | 000 | worker-2 | [006](tasks/006-render-core.md) |
 | 007 | Complete 8086 instruction set | done | 001, 002 | worker-1 | [007](tasks/007-cpu-8086.md) |
 | 008 | 8259 PIC and 8254 PIT | done | 003 | worker-3 | [008](tasks/008-pic-pit.md) |
 | 009 | 8042 keyboard controller, port 61h, CMOS/RTC | todo | 003 | — | [009](tasks/009-kbd-cmos.md) |
