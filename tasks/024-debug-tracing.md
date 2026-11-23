@@ -1,9 +1,9 @@
 # 024 — Debug tracing and fault reports
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 013
-- **Owner:** —
+- **Owner:** worker-1
 
 ## Goal
 Make "why did this program break" fast to answer.
@@ -17,5 +17,13 @@ Make "why did this program break" fast to answer.
 - Disassembler-lite for the dump (mnemonic + operands for common opcodes).
 
 ## Acceptance criteria
-- [ ] Tests: ring buffer wrap, warn-once dedupe, fault dump format.
-- [ ] Tracing off costs no measurable time (branch on a flag).
+- [x] Tests: ring buffer wrap, warn-once dedupe, fault dump format.
+- [x] Tracing off costs no measurable time (branch on a flag).
+
+## Notes
+- `Machine::tracer: Option<Box<Tracer>>` (None = one branch per
+  instruction); `Machine::fault_report(exit)`; `debug::warn_once`.
+- App: `--trace` (64-entry ring), `--trace=FILE` (+ full trace),
+  `--log-int=21,10`, `DOSY_LOG` level; reports print on fault/halt.
+- Per-instance warn-once sets in `Hardware` (ports) and `Dos` predate the
+  shared registry and were left as is.
