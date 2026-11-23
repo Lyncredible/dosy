@@ -35,8 +35,8 @@ BIOS timing:
 8042 / CMOS (left over from 009):
 - 8042 aux (PS/2 mouse) port: commands A7h/A8h/D4h and IRQ12.
 - RTC alarm and periodic interrupts on IRQ8 (status regs A/B/C).
-- CPU reset through the 8042 (command FEh pulse), resuming via the BDA
-  shutdown byte / `0040:0067`.
+- CPU reset through the 8042 (command FEh pulse), resuming per the CMOS
+  shutdown status byte (0Fh) via the `0040:0067` vector.
 - Keyboard FEh (resend) response.
 - Port 70h bit 7 NMI mask.
 
