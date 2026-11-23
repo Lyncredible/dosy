@@ -133,7 +133,7 @@ const MODE_13: ModeParams = ModeParams {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
         0x0F, 0x41, 0x00, 0x0F, 0x00,
     ],
-    gc: [0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x00, 0xFF],
+    gc: [0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x0F, 0xFF],
     dac: DacInit::Vga256,
 };
 
@@ -321,8 +321,7 @@ pub fn install<B: Bus>(bus: &mut B) {
     bus.load_rom(rom(FUNC_TABLE), &func);
     set_vector(bus, 0x1D, ROM_SEGMENT, VIDEO_PARAMS);
     set_vector(bus, 0x1F, ROM_SEGMENT, ROM_FONT_8X8_HI);
-    set_vector(bus, 0x43, ROM_SEGMENT, ROM_FONT_8X8);
-    set_mode(bus, 0x03);
+    set_mode(bus, 0x03); // also sets INT 43h
 }
 
 /// IBM PC 6845 parameter table: 4 x 16 CRTC sets, page sizes, columns,
@@ -381,7 +380,13 @@ pub fn set_mode<B: Bus>(bus: &mut B, mode: u8) {
     }
     bda::write16(bus, bda::CURSOR_SHAPE, 0x0607);
     bda::write8(bus, bda::VIDEO_PAGE, 0);
-    bda::write8(bus, bda::VIDEO_MODE_CTRL, p.mode_ctrl);
+    // Modes 0 and 2 are the colour-burst-off variants (IBM table: 2Ch, 2Dh).
+    let mode_ctrl = match m {
+        0x00 => 0x2C,
+        0x02 => 0x2D,
+        _ => p.mode_ctrl,
+    };
+    bda::write8(bus, bda::VIDEO_MODE_CTRL, mode_ctrl);
     bda::write8(bus, bda::VIDEO_PALETTE, 0x30);
     bda::write8(bus, bda::VIDEO_ROWS, p.rows - 1);
     bda::write8(bus, bda::CHAR_HEIGHT, p.char_height);
@@ -392,6 +397,14 @@ pub fn set_mode<B: Bus>(bus: &mut B, mode: u8) {
         bda::EQUIPMENT,
         equip | if m == 7 { 0x30 } else { 0x20 },
     );
+
+    // INT 43h: the ROM font matching the mode's character height.
+    let graphics_font = if p.char_height == 8 {
+        ROM_FONT_8X8
+    } else {
+        ROM_FONT_8X16
+    };
+    set_vector(bus, 0x43, ROM_SEGMENT, graphics_font);
 
     if p.text {
         load_font(bus, &font::FONT_8X16, 16, 0, 0);

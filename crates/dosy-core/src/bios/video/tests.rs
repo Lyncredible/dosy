@@ -234,7 +234,8 @@ fn info_functions_and_font_vectors() {
     let vec = |hw: &mut Hardware, v: u32| (hw.read16(v * 4 + 2), hw.read16(v * 4));
     assert_eq!(vec(&mut hw, 0x1D), (0xF000, VIDEO_PARAMS));
     assert_eq!(vec(&mut hw, 0x1F), (0xF000, ROM_FONT_8X8_HI));
-    assert_eq!(vec(&mut hw, 0x43), (0xF000, ROM_FONT_8X8));
+    // INT 43h follows the mode's character height.
+    assert_eq!(vec(&mut hw, 0x43), (0xF000, ROM_FONT_8X16));
     assert_eq!(hw.read8(linear(0xF000, VIDEO_PARAMS) + 16), 0x71);
     assert_eq!(
         hw.read8(linear(0xF000, ROM_FONT_8X8_HI)),
@@ -259,6 +260,12 @@ fn info_functions_and_font_vectors() {
     assert_eq!(cpu.regs.al(), 0x1B);
     assert_eq!(hw.read8(0x30004), 3);
     assert_eq!(hw.read8(0x30022), 25);
+
+    int(&mut hw, 0x0013, 0, 0, 0);
+    assert_eq!(vec(&mut hw, 0x43), (0xF000, ROM_FONT_8X8));
+    assert_eq!(hw.vga.gc[7], 0x0F);
+    int(&mut hw, 0x0002, 0, 0, 0);
+    assert_eq!(bda::read8(&mut hw, bda::VIDEO_MODE_CTRL), 0x2D);
 }
 
 #[test]
