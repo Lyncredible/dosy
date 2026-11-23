@@ -177,9 +177,16 @@ pub fn install_stub<B: Bus>(bus: &mut B, id: HleId, kind: StubKind) -> u32;  // 
   Guest paths are resolved by `Dos::resolve` (drive, cwd, `.`/`..`, over-long
   components truncated to 8.3). FindFirst state lives in the DTA, with the
   search directory as an id into a host-side table.
-- EXEC pushes `Process { psp, ss, sp }` (parent stack); `Dos::terminate`
-  pops it, frees the child's blocks, restores INT 22h–24h from its PSP and
-  jumps to its INT 22h address.
+- `Dos::exec(cpu, bus, path, &ExecParams)` (INT 21h/4B00; also 4B01/4B03):
+  the CPU's CS:IP/SS:SP/FLAGS at the call become the parent's resume point
+  (child PSP INT 22h + pushed `Process { psp, ss, sp, flags }`). The child
+  inherits the parent's JFT. `Dos::terminate` pops it, closes the child's
+  handles, frees its blocks, restores INT 22h–24h and resumes the parent.
+- Top-level exit: terminating with no `Process` left, or reaching the root
+  PSP's INT 22h stub, sets `Dos::exit_code`; `run_for` then returns
+  `RunExit::Exited(code)` (sticky). The shell (021) gives its children its
+  own resume point, so this only fires when the shell itself exits or a
+  program was started with `Machine::exec` (no shell).
 
 ### Shell (`shell/`)
 
@@ -230,7 +237,10 @@ impl Machine {
 ```
 
 - `RunExit`: `Budget`, `Halted` (HLT with IF=0), `Fault(CpuFault)`,
-  `UnhandledCallback(HleId)`.
+  `UnhandledCallback(HleId)`, `Exited(u8)`.
+- `Machine::dos` owns the kernel and the only drive table
+  (`Machine::mount` forwards to it); DOS callbacks go to it unless a
+  handler is registered for `Subsystem::Dos`.
 - `HleHandler = Box<dyn FnMut(HleId, &mut Cpu, &mut Hardware) -> HleResult + Send>`,
   one per subsystem; `Machine` stays `Send`. Subsystems with host state
   (DOS, shell) may replace this with direct calls on `Machine` fields.

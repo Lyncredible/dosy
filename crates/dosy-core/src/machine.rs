@@ -6,11 +6,13 @@
 //! IRQ. HLT fast-forwards to the next event.
 
 use crate::bios;
+use crate::bus::{Bus, linear};
 use crate::cpu::flags::IF;
-use crate::cpu::{Cpu, CpuFault, Step};
-use crate::hle::{HleId, HleResult, Subsystem};
+use crate::cpu::{Cpu, CpuFault, Seg, Step};
+use crate::dos::{self, Dos};
+use crate::hle::{HleId, HleResult, ROM_SEGMENT, Subsystem};
 use crate::hw::{DEFAULT_CYCLES_PER_MS, Hardware};
-use crate::vfs::Drive;
+use crate::vfs::{DosError, Drive};
 
 /// Core-side machine settings (the app maps its `Config` to this).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +39,9 @@ pub enum RunExit {
     Fault(CpuFault),
     /// Callback with no handler for its subsystem; IP points at it.
     UnhandledCallback(HleId),
+    /// The top-level DOS process terminated with this return code (no
+    /// shell to return to). Sticky: later calls return it again.
+    Exited(u8),
 }
 
 /// HLE entry point for one subsystem.
@@ -58,8 +63,9 @@ pub struct Machine {
     pub cpu: Cpu,
     pub hw: Hardware,
     handlers: [Option<HleHandler>; SUBSYSTEMS],
-    /// Mounted drives A..Z; the DOS kernel (017) takes these over.
-    pub drives: [Option<Box<dyn Drive>>; 26],
+    /// HLE DOS kernel; handles `Subsystem::Dos` callbacks unless a
+    /// handler is registered for them.
+    pub dos: Dos,
     /// Host RTC base in Unix seconds, for CMOS (009).
     pub rtc_base: i64,
 }
@@ -71,11 +77,14 @@ impl Machine {
         let mut hw = Hardware::new();
         hw.set_cycles_per_ms(cfg.cycles_per_ms);
         bios::install(&mut hw);
+        // After the BIOS: DOS sizes memory from the BDA.
+        let mut dos = Dos::new();
+        dos.install(&mut hw);
         let mut m = Self {
             cpu: Cpu::new(),
             hw,
             handlers: Default::default(),
-            drives: Default::default(),
+            dos,
             rtc_base: 0,
         };
         m.set_handler(Subsystem::Bios, Box::new(bios::handle));
@@ -94,7 +103,21 @@ impl Machine {
             (b'A' as usize..=b'Z' as usize).contains(&i),
             "bad drive {letter:?}"
         );
-        self.drives[i - b'A' as usize] = Some(drive);
+        self.dos.mount((i - b'A' as usize) as u8, drive);
+    }
+
+    /// Run a program as the top-level process (no shell): when it
+    /// terminates, `run_for` returns `RunExit::Exited(code)`.
+    pub fn exec(&mut self, path: &str, tail: &str) -> Result<(), DosError> {
+        // Resume point: the INT 22h stub, on a stack in the root block.
+        let root = self.dos.root_psp;
+        self.cpu.far_jump(ROM_SEGMENT, dos::ID_INT22.stub_offset());
+        self.cpu.sregs.set(Seg::Ss, root);
+        self.cpu.regs.set_sp(dos::ROOT_PARAS * 16 - 2);
+        self.hw.write16(linear(root, dos::ROOT_PARAS * 16 - 2), 0);
+        let params = dos::exec::ExecParams::from_tail(tail);
+        self.dos
+            .exec(&mut self.cpu, &mut self.hw, path.as_bytes(), &params)
     }
 
     pub fn set_cycles_per_ms(&mut self, n: u32) {
@@ -112,6 +135,9 @@ impl Machine {
 
     /// Run about `cycles` CPU cycles of emulated time.
     pub fn run_for(&mut self, cycles: u64) -> RunExit {
+        if let Some(code) = self.dos.exit_code() {
+            return RunExit::Exited(code);
+        }
         let mut left = cycles;
         loop {
             self.hw.fire_due();
@@ -159,7 +185,11 @@ impl Machine {
                     Step::Ok => {}
                     Step::Halt => break None,
                     Step::Callback(id) => match self.dispatch(id) {
-                        Some(HleResult::Done) => {}
+                        Some(HleResult::Done) => {
+                            if let Some(code) = self.dos.exit_code() {
+                                break Some(RunExit::Exited(code));
+                            }
+                        }
                         Some(HleResult::Retry) => {
                             // Re-run the callback after the next interrupt.
                             self.cpu.ip = self.cpu.insn_ip;
@@ -190,8 +220,14 @@ impl Machine {
     }
 
     fn dispatch(&mut self, id: HleId) -> Option<HleResult> {
-        let h = self.handlers[slot(id.subsystem())?].as_mut()?;
-        Some(h(id, &mut self.cpu, &mut self.hw))
+        let sub = id.subsystem();
+        match self.handlers[slot(sub)?].as_mut() {
+            Some(h) => Some(h(id, &mut self.cpu, &mut self.hw)),
+            None if sub == Subsystem::Dos => {
+                Some(self.dos.callback(id, &mut self.cpu, &mut self.hw))
+            }
+            None => None,
+        }
     }
 }
 

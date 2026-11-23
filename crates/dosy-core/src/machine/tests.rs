@@ -244,3 +244,23 @@ fn bios_int16_blocks_until_a_key_arrives() {
     assert_eq!(m.run_for(3000 * 100), RunExit::Halted);
     assert_eq!(m.hw.read16(linear(CODE, 0x200)), 0x1E61);
 }
+
+#[test]
+fn top_level_program_exit_stops_the_machine() {
+    let mut m = Machine::new(MachineConfig::default());
+    let mut c = crate::vfs::MemDrive::new();
+    // mov ah,30h ; int 21h ; mov ah,4Ch ; int 21h  (exit code = DOS major)
+    c.add_file(
+        "\\APPS\\VER.COM",
+        &[0xB4, 0x30, 0xCD, 0x21, 0xB4, 0x4C, 0xCD, 0x21],
+    );
+    m.mount('c', Box::new(c));
+    assert_eq!(
+        m.exec("C:\\APPS\\NONE.COM", ""),
+        Err(DosError::FileNotFound)
+    );
+    m.exec("C:\\APPS\\VER.COM", "").unwrap();
+    assert_eq!(m.run_for(10_000), RunExit::Exited(5));
+    assert_eq!(m.run_for(10_000), RunExit::Exited(5), "sticky");
+    assert!(m.dos.processes.is_empty());
+}
