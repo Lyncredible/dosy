@@ -168,6 +168,11 @@ pub fn install_stub<B: Bus>(bus: &mut B, id: HleId, kind: StubKind) -> u32;  // 
   the root (shell) PSP. The machine calls `Dos::callback(id, cpu, bus)`.
 - Current PSP, DTA, return code and break flag live in the SDA (guest
   memory). Handlers report CF through the IRET frame at SS:SP.
+- Files: `Dos::mount(index, drive)`; host SFT (`Dos::sft`, 40 entries,
+  refcounted for dup) indexed by the PSP's JFT; entries 0–2 are AUX/CON/PRN.
+  Guest paths are resolved by `Dos::resolve` (drive, cwd, `.`/`..`, over-long
+  components truncated to 8.3). FindFirst state lives in the DTA, with the
+  search directory as an id into a host-side table.
 - EXEC pushes `Process { psp, ss, sp }` (parent stack); `Dos::terminate`
   pops it, frees the child's blocks, restores INT 22h–24h from its PSP and
   jumps to its INT 22h address.

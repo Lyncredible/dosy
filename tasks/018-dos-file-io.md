@@ -1,9 +1,9 @@
 # 018 — DOS file and directory I/O
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 004, 017
-- **Owner:** —
+- **Owner:** worker-4
 
 ## Goal
 Handle-based file and directory services on top of `dosy-vfs` drives.
@@ -20,11 +20,18 @@ Handle-based file and directory services on top of `dosy-vfs` drives.
 - Handles 0–4 reserved for devices (wired to CON in 020).
 
 ## Acceptance criteria
-- [ ] Tests with `MemDrive`: create/write/seek/read, find-first wildcard
+- [x] Tests with `MemDrive`: create/write/seek/read, find-first wildcard
       listing order, error codes, cwd per drive, handle exhaustion.
 
 ## Review follow-ups
-- [ ] Real DOS silently truncates over-long names
+- [x] Real DOS silently truncates over-long names
       (`LONGFILENAME.TEXT` → `LONGFILE.TEX`), but `DosName::parse` rejects
       them. Truncate each component before parsing, or add a lenient parse to
       `dosy-vfs`, for open, create, find and rename paths. Add a test.
+
+## Deferred
+- Device handles (0–4) are stubs: reads return EOF, writes are discarded
+  until 020 wires CON. Opening device names by path is 020.
+- FindFirst does not list `.`/`..`; code page (high) bytes in names are
+  rejected with error 3.
+- Closing a process's handles on terminate is left to 019.
