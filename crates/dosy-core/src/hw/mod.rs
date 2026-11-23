@@ -238,8 +238,7 @@ impl<M: Mmio> Bus for Hardware<M> {
         self.sync_irqs();
     }
     fn load_rom(&mut self, addr: Addr, bytes: &[u8]) {
-        let a = self.mem.phys(addr);
-        self.mem.load_rom(a, bytes);
+        self.mem.load_rom(addr, bytes);
     }
 }
 
@@ -312,6 +311,25 @@ mod tests {
         l.pulse(3);
         l.raise(12);
         assert_eq!((l.take_rising(), l.levels()), (1 << 3, 1 << 12));
+    }
+
+    #[test]
+    fn port_92_controls_a20() {
+        let mut hw = Hardware::new();
+        assert_eq!(hw.io_in8(0x92), 0);
+        hw.io_out8(0x92, 0x02);
+        assert!(hw.mem.a20());
+        assert_eq!(hw.io_in8(0x92), 0x02);
+        hw.write8(0x10_0000, 1);
+        assert_eq!(hw.read8(0), 0);
+    }
+
+    #[test]
+    fn load_rom_is_robust_at_boundaries() {
+        let mut hw = Hardware::new();
+        hw.load_rom(0xF_FFFF, &[0xAA, 0xBB]);
+        assert_eq!(hw.read8(0), 0xBB, "A20 off wraps per byte");
+        hw.load_rom(crate::memory::RAM_SIZE as Addr - 1, &[1, 2, 3]);
     }
 
     #[test]

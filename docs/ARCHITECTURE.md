@@ -147,6 +147,9 @@ pub fn install_stub<B: Bus>(bus: &mut B, id: HleId, kind: StubKind) -> u32;  // 
   `fn int16<B: Bus>(cpu: &mut Cpu, bus: &mut B) -> HleResult`; DOS handlers
   also take `&mut Dos`. They unit-test on `FlatBus` without a machine.
 - `machine.rs` dispatches `Step::Callback(id)` on `id.subsystem()`.
+- BIOS: `bios::install(bus)` at power-on (also programs PIC IMR and PIT
+  ch0), `bios::handle(id, cpu, bus)`. Handlers in `Iret` stubs return flags
+  via `bios::set_caller_flag` (patches the FLAGS image the INT pushed).
 - **Never block the host.** A handler that must wait (INT 16h/00 with an
   empty buffer, INT 21h/01) returns `Retry`: the machine rewinds IP to the
   callback, sets IF and halts; the next IRQ wakes it and the callback re-runs.

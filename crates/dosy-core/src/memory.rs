@@ -123,10 +123,15 @@ impl Memory {
         }
     }
 
-    /// Host write to physical RAM, bypassing ROM protection and MMIO.
-    pub fn load_rom(&mut self, phys: Addr, bytes: &[u8]) {
-        let a = phys as usize;
-        self.ram[a..a + bytes.len()].copy_from_slice(bytes);
+    /// Host write to RAM at a linear address, bypassing ROM protection and
+    /// MMIO. A20 applies per byte; bytes past the end of RAM are dropped.
+    pub fn load_rom(&mut self, addr: Addr, bytes: &[u8]) {
+        for (i, &b) in bytes.iter().enumerate() {
+            let a = self.phys(addr.wrapping_add(i as Addr)) as usize;
+            if let Some(r) = self.ram.get_mut(a) {
+                *r = b;
+            }
+        }
     }
 
     /// Host view of physical RAM.
@@ -174,6 +179,21 @@ mod tests {
         m.set_rom(0xC_0000, 0xC_8000, true);
         m.write8(0xC_0000, 7, &mut io);
         assert_eq!(m.read8(0xC_0000, &mut io), 0);
+    }
+
+    #[test]
+    fn load_rom_wraps_and_clips_without_panicking() {
+        let mut m = Memory::new();
+        let mut io = NoMmio;
+        m.load_rom(0xF_FFFE, &[1, 2, 3, 4]); // A20 off: wraps to 0
+        assert_eq!(m.read8(0xF_FFFF, &mut io), 2);
+        assert_eq!(m.read8(0x1, &mut io), 4);
+        m.set_a20(true);
+        m.load_rom(0xF_FFFF, &[5, 6]);
+        assert_eq!(m.read8(0x10_0000, &mut io), 6);
+        m.load_rom(RAM_SIZE as Addr - 1, &[7, 8, 9]); // past the HMA end
+        assert_eq!(m.ram()[RAM_SIZE - 1], 7);
+        m.load_rom(0xFFFF_FFFF, &[1, 2]);
     }
 
     struct Window {
