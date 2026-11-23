@@ -193,6 +193,39 @@ pub fn dos_seek(pos: u64, len: u64, from: SeekFrom) -> u64 {
     (base as u32).wrapping_add(d as u32) as u64
 }
 
+impl<D: Drive + ?Sized> Drive for Box<D> {
+    fn info(&self) -> DriveInfo {
+        (**self).info()
+    }
+    fn open(&mut self, p: &DosPath, mode: OpenMode) -> Result<Box<dyn DosFile>, DosError> {
+        (**self).open(p, mode)
+    }
+    fn create(&mut self, p: &DosPath, attr: Attr) -> Result<Box<dyn DosFile>, DosError> {
+        (**self).create(p, attr)
+    }
+    fn stat(&mut self, p: &DosPath) -> Result<DirEntry, DosError> {
+        (**self).stat(p)
+    }
+    fn read_dir(&mut self, dir: &DosPath) -> Result<Vec<DirEntry>, DosError> {
+        (**self).read_dir(dir)
+    }
+    fn remove(&mut self, p: &DosPath) -> Result<(), DosError> {
+        (**self).remove(p)
+    }
+    fn rename(&mut self, from: &DosPath, to: &DosPath) -> Result<(), DosError> {
+        (**self).rename(from, to)
+    }
+    fn mkdir(&mut self, p: &DosPath) -> Result<(), DosError> {
+        (**self).mkdir(p)
+    }
+    fn rmdir(&mut self, p: &DosPath) -> Result<(), DosError> {
+        (**self).rmdir(p)
+    }
+    fn set_attr(&mut self, p: &DosPath, attr: Attr) -> Result<(), DosError> {
+        (**self).set_attr(p, attr)
+    }
+}
+
 /// An open file. Positions may go past EOF; writing there zero-fills.
 pub trait DosFile: Send {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, DosError>;

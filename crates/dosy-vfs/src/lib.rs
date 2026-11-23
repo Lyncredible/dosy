@@ -7,15 +7,24 @@ mod error;
 mod host;
 mod mem;
 mod name;
+mod overlay;
 pub mod shortname;
+mod zipdrive;
+
+#[cfg(test)]
+mod tests_zip;
+#[cfg(test)]
+mod testutil;
 
 pub use drive::{
     Attr, DirEntry, DosDateTime, DosFile, Drive, DriveInfo, OpenMode, SeekFrom, dos_seek,
 };
 pub use error::DosError;
-pub use host::{HostDrive, MountOptions, open_mount};
+pub use host::{HostDrive, MountOptions, Overlay, open_mount};
 pub use mem::MemDrive;
 pub use name::{DosName, DosPath, DosPattern, matches};
+pub use overlay::OverlayDrive;
+pub use zipdrive::ZipDrive;
 
 /// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

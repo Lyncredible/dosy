@@ -1,9 +1,9 @@
 # 028 — Zip drives and writable overlay
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M2
 - **Depends on:** 011
-- **Owner:** —
+- **Owner:** worker-4
 
 ## Goal
 Mount a `.zip` as a read-only DOS drive, optionally with writes going to an
@@ -20,6 +20,6 @@ overlay.
 - `open_mount` handles `.zip` (`overlay` option: none / memory / dir).
 
 ## Acceptance criteria
-- [ ] Tests build zips at runtime in a temp dir (no committed archives):
+- [x] Tests build zips at runtime in a temp dir (no committed archives):
       listing, nested dirs, long names, read content, write rejected
       without overlay, overlay copy-up/delete/rename.

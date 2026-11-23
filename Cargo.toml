@@ -15,6 +15,7 @@ dosy-vfs = { path = "crates/dosy-vfs" }
 dosy-config = { path = "crates/dosy-config" }
 dosy-render = { path = "crates/dosy-render" }
 log = "0.4"
+zip = { version = "7.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 wgpu = "30"
 pollster = "1"
 winit = "0.30"

@@ -363,7 +363,11 @@ pub trait DosFile: Send {
   case-insensitive on every host. HostDrive canonicalizes resolved paths and
   rejects anything outside the mount root (symlinks). Host times are UTC.
 - `dosy_vfs::open_mount(path, &MountOptions) -> io::Result<Box<dyn Drive>>`
-  picks dir / zip / file. The shell's `MOUNT` uses it.
+  picks dir / zip / file. The shell's `MOUNT` uses it. Zip mounts take
+  `MountOptions::overlay`: `None` (read-only), `Memory`, or `Dir(path)`
+  (writes persist there; the archive is never modified).
+- `OverlayDrive<L, U>`: reads fall through to `L`; writes copy up to `U`;
+  deletes/renames of lower entries are in-memory whiteouts (not persisted).
 - Seeks use DOS 32-bit wrapping (`dos_seek`): seeking before the start
   succeeds; the following read sees EOF and a write fails.
 
