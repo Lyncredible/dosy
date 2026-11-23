@@ -216,8 +216,15 @@ impl Machine {
     pub fn set_audio_sink(&mut self, sink: Box<dyn AudioSink>);
     pub fn set_cycles_per_ms(&mut self, n: u32);
     pub fn set_rtc(&mut self, unix_secs: i64);              // host time injected, not read
+    pub fn set_handler(&mut self, s: Subsystem, h: HleHandler); // callback routing
 }
 ```
+
+- `RunExit`: `Budget`, `Halted` (HLT with IF=0), `Fault(CpuFault)`,
+  `UnhandledCallback(HleId)`.
+- `HleHandler = Box<dyn FnMut(HleId, &mut Cpu, &mut Hardware) -> HleResult + Send>`,
+  one per subsystem; `Machine` stays `Send`. Subsystems with host state
+  (DOS, shell) may replace this with direct calls on `Machine` fields.
 
 ## Timing model
 

@@ -26,7 +26,7 @@ all its dependencies are `done`.
 | 010 | VGA registers, DAC and text mode | todo | 003 | — | [010](tasks/010-vga-text.md) |
 | 011 | Host directory and single-file drives | todo | 004 | — | [011](tasks/011-vfs-host.md) |
 | 012 | App window: winit + renderer + config | todo | 005, 006 | — | [012](tasks/012-app-window.md) |
-| 013 | Machine loop, interrupts and HLE dispatch | todo | 003, 007, 008 | — | [013](tasks/013-machine.md) |
+| 013 | Machine loop, interrupts and HLE dispatch | done | 003, 007, 008 | worker-1 | [013](tasks/013-machine.md) |
 | 014 | CPU conformance tests (SingleStepTests) | todo | 007 | — | [014](tasks/014-cpu-conformance.md) |
 | 015 | BIOS HLE core | todo | 002 | — | [015](tasks/015-bios-hle.md) |
 | 016 | INT 10h video BIOS | todo | 010, 015 | — | [016](tasks/016-int10.md) |
