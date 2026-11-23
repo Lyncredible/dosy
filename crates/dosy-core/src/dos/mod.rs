@@ -98,7 +98,7 @@ pub struct Dos {
     /// System file table (see `files`).
     pub sft: Vec<Option<SftEntry>>,
     /// FindFirst directories, indexed by the id kept in the DTA.
-    search_dirs: Vec<(u8, DosPath)>,
+    search_dirs: Vec<find::Search>,
     /// Set when the top-level process ends (see [`Dos::exit_code`]).
     exited: Option<u8>,
     /// INT 21h/58h strategy word as last set (see `Strategy::from_dos`).

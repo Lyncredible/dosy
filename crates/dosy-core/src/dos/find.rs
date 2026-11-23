@@ -1,15 +1,18 @@
 //! INT 21h/4Eh–4Fh find first/next.
 //!
 //! DTA layout: `+00` drive, `+01` 11-byte FCB pattern, `+0C` search
-//! attributes, `+0D` next entry index (word), `+0F` search directory id
-//! (word, into `Dos::search_dirs`), `+15` attr, `+16` time, `+18` date,
-//! `+1A` size (dword), `+1E` ASCIIZ name (13 bytes).
+//! attributes, `+0D` next entry index (word), `+0F` search id (word, into
+//! `Dos::search_dirs`), `+15` attr, `+16` time, `+18` date, `+1A` size
+//! (dword), `+1E` ASCIIZ name (13 bytes).
+//!
+//! FindFirst snapshots the directory (with `.` and `..` outside the root);
+//! FindNext resumes from that snapshot without re-reading the drive.
 
 use super::Dos;
 use super::path::read_asciiz;
 use crate::bus::{Bus, linear};
 use crate::cpu::{Cpu, Seg};
-use crate::vfs::{Attr, DirEntry, DosError, DosPath, DosPattern};
+use crate::vfs::{Attr, DosDateTime, DosError, DosPath, DosPattern};
 
 const D_DRIVE: u16 = 0x00;
 const D_PATTERN: u16 = 0x01;
@@ -25,24 +28,82 @@ const D_NAME: u16 = 0x1E;
 /// Hidden, system and directory entries are only listed when asked for.
 const SPECIAL: u8 = Attr::HIDDEN.0 | Attr::SYSTEM.0 | Attr::DIRECTORY.0;
 
-fn wanted(e: &DirEntry, attr: u8, pat: &DosPattern) -> bool {
-    !e.attr.contains(Attr::VOLUME) && e.attr.0 & SPECIAL & !attr == 0 && pat.matches(&e.name)
+/// One directory entry as FindFirst/Next report it.
+#[derive(Clone, Debug)]
+pub struct Found {
+    fcb: [u8; 11],
+    name: Vec<u8>,
+    attr: Attr,
+    size: u32,
+    mtime: DosDateTime,
+}
+
+/// A directory being searched, keyed by drive and path.
+pub struct Search {
+    drive: u8,
+    dir: DosPath,
+    entries: Vec<Found>,
+}
+
+fn wanted(e: &Found, attr: u8, pat: &DosPattern) -> bool {
+    !e.attr.contains(Attr::VOLUME) && e.attr.0 & SPECIAL & !attr == 0 && pat.matches_fcb(&e.fcb)
+}
+
+fn dot_entry(name: &[u8], mtime: DosDateTime) -> Found {
+    let mut fcb = [b' '; 11];
+    fcb[..name.len()].copy_from_slice(name);
+    Found {
+        fcb,
+        name: name.to_vec(),
+        attr: Attr::DIRECTORY,
+        size: 0,
+        mtime,
+    }
 }
 
 impl Dos {
-    /// Stable id for a search directory (ids are reused per path).
-    fn search_dir_id(&mut self, drive: u8, dir: DosPath) -> u16 {
-        let key = (drive, dir);
-        match self.search_dirs.iter().position(|d| *d == key) {
-            Some(i) => i as u16,
-            None => {
-                self.search_dirs.push(key);
-                (self.search_dirs.len() - 1) as u16
-            }
+    /// Snapshot `dir` and return its search id (ids are reused per path).
+    fn start_search(&mut self, drive: u8, dir: DosPath) -> Result<u16, DosError> {
+        let d = self.drive_mut(drive)?;
+        let listing = d.read_dir(&dir).map_err(|e| match e {
+            DosError::FileNotFound => DosError::PathNotFound,
+            e => e,
+        })?;
+        let mut entries = Vec::with_capacity(listing.len() + 2);
+        if !dir.is_root() {
+            let mtime = d.stat(&dir).map(|e| e.mtime).unwrap_or_default();
+            entries.push(dot_entry(b".", mtime));
+            entries.push(dot_entry(b"..", mtime));
         }
+        entries.extend(listing.iter().map(|e| Found {
+            fcb: e.name.fcb(),
+            name: e.name.to_bytes(),
+            attr: e.attr,
+            size: e.size,
+            mtime: e.mtime,
+        }));
+        let i = match self
+            .search_dirs
+            .iter()
+            .position(|s| s.drive == drive && s.dir == dir)
+        {
+            Some(i) => {
+                self.search_dirs[i].entries = entries;
+                i
+            }
+            None => {
+                self.search_dirs.push(Search {
+                    drive,
+                    dir,
+                    entries,
+                });
+                self.search_dirs.len() - 1
+            }
+        };
+        Ok(i as u16)
     }
 
-    /// Scan from `start`; fill the DTA with the first match.
+    /// Scan the snapshot from `start`; fill the DTA with the first match.
     fn find_from<B: Bus>(&mut self, bus: &mut B, start: u16) -> Result<(), DosError> {
         let (seg, off) = self.dta(bus);
         let at = |o: u16| linear(seg, off.wrapping_add(o));
@@ -52,20 +113,13 @@ impl Dos {
         }
         let pat = DosPattern::from_fcb(fcb);
         let attr = bus.read8(at(D_ATTR));
-        let id = bus.read16(at(D_DIR)) as usize;
-        let (drive, dir) = self
-            .search_dirs
-            .get(id)
-            .cloned()
-            .ok_or(DosError::NoMoreFiles)?;
         if attr == Attr::VOLUME.0 {
             return Err(DosError::NoMoreFiles); // volume labels are not listed
         }
-        let entries = self.drive_mut(drive)?.read_dir(&dir).map_err(|e| match e {
-            DosError::FileNotFound => DosError::PathNotFound,
-            e => e,
-        })?;
-        let found = entries
+        let id = bus.read16(at(D_DIR)) as usize;
+        let search = self.search_dirs.get(id).ok_or(DosError::NoMoreFiles)?;
+        let found = search
+            .entries
             .iter()
             .enumerate()
             .skip(start as usize)
@@ -73,15 +127,15 @@ impl Dos {
         let Some((i, e)) = found else {
             return Err(DosError::NoMoreFiles);
         };
+        let e = e.clone();
         bus.write16(at(D_INDEX), i as u16 + 1);
         bus.write8(at(D_FOUND_ATTR), e.attr.0);
         let (date, time) = e.mtime.to_dos();
         bus.write16(at(D_TIME), time);
         bus.write16(at(D_DATE), date);
         bus.write32(at(D_SIZE), e.size);
-        let name = e.name.to_string();
         for i in 0..13u16 {
-            let b = name.as_bytes().get(i as usize).copied().unwrap_or(0);
+            let b = e.name.get(i as usize).copied().unwrap_or(0);
             bus.write8(at(D_NAME + i), b);
         }
         Ok(())
@@ -98,7 +152,7 @@ impl Dos {
         if !self.is_dir(r.drive, &dir) {
             return Err(DosError::PathNotFound);
         }
-        let id = self.search_dir_id(r.drive, dir);
+        let id = self.start_search(r.drive, dir)?;
         let (seg, off) = self.dta(bus);
         let at = |o: u16| linear(seg, off.wrapping_add(o));
         bus.write8(at(D_DRIVE), r.drive);

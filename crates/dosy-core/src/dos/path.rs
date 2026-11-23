@@ -28,28 +28,31 @@ pub fn write_asciiz<B: Bus>(bus: &mut B, seg: u16, off: u16, s: &[u8]) {
 
 /// Truncate an over-long `NAME.EXT` component to 8.3, as DOS does
 /// (`LONGFILENAME.TEXT` → `LONGFILE.TEX`).
-fn truncate_83(comp: &str) -> String {
-    let (base, ext) = comp.split_once('.').unwrap_or((comp, ""));
-    let base: String = base.chars().take(8).collect();
-    if comp.contains('.') {
-        format!("{base}.{}", ext.chars().take(3).collect::<String>())
-    } else {
-        base
+fn truncate_83(comp: &[u8]) -> Vec<u8> {
+    match comp.iter().position(|&c| c == b'.') {
+        Some(i) => {
+            let (base, ext) = (&comp[..i], &comp[i + 1..]);
+            let mut out = base[..base.len().min(8)].to_vec();
+            out.push(b'.');
+            out.extend(&ext[..ext.len().min(3)]);
+            out
+        }
+        None => comp[..comp.len().min(8)].to_vec(),
     }
 }
 
-/// A resolved guest path: drive index plus normalized components (the last
-/// one may still hold wildcards).
+/// A resolved guest path: drive index plus normalized components as guest
+/// bytes (the last one may still hold wildcards).
 pub struct Resolved {
     pub drive: u8,
-    pub parts: Vec<String>,
+    pub parts: Vec<Vec<u8>>,
 }
 
 impl Resolved {
-    fn names(parts: &[String]) -> Result<DosPath, DosError> {
+    fn names(parts: &[Vec<u8>]) -> Result<DosPath, DosError> {
         parts
             .iter()
-            .map(|p| DosName::parse(p))
+            .map(|p| DosName::from_bytes(p))
             .collect::<Result<Vec<_>, _>>()
             .map(DosPath::from_names)
     }
@@ -61,7 +64,7 @@ impl Resolved {
     /// Directory plus a FindFirst pattern for the last component.
     pub fn dir_and_pattern(&self) -> Result<(DosPath, DosPattern), DosError> {
         let (last, dir) = self.parts.split_last().ok_or(DosError::NoMoreFiles)?;
-        Ok((Self::names(dir)?, DosPattern::parse(last)?))
+        Ok((Self::names(dir)?, DosPattern::from_bytes(last)?))
     }
 }
 
@@ -89,31 +92,30 @@ impl Dos {
 
     /// Resolve a guest path against the current drive and directory.
     pub fn resolve<B: Bus>(&self, bus: &mut B, raw: &[u8]) -> Result<Resolved, DosError> {
-        // High (code page) bytes are not supported in names yet.
-        let s = std::str::from_utf8(raw)
-            .ok()
-            .filter(|s| s.is_ascii())
-            .ok_or(DosError::PathNotFound)?;
-        let (drive, rest) = match s.as_bytes() {
-            [l, b':', ..] if l.is_ascii_alphabetic() => (l.to_ascii_uppercase() - b'A', &s[2..]),
-            _ => (self.current_drive(bus), s),
+        // Code-page bytes (>= 80h) pass through to the names.
+        let (drive, rest) = match raw {
+            [l, b':', rest @ ..] if l.is_ascii_alphabetic() => {
+                (l.to_ascii_uppercase() - b'A', rest)
+            }
+            _ => (self.current_drive(bus), raw),
         };
         if !self.is_mounted(drive) {
             return Err(DosError::PathNotFound);
         }
-        let mut parts: Vec<String> = if rest.starts_with(['\\', '/']) {
+        let sep = |c: &u8| *c == b'\\' || *c == b'/';
+        let mut parts: Vec<Vec<u8>> = if rest.first().is_some_and(sep) {
             Vec::new()
         } else {
             self.cwd[drive as usize]
                 .components()
                 .iter()
-                .map(|n| n.to_string())
+                .map(|n| n.to_bytes())
                 .collect()
         };
-        for comp in rest.split(['\\', '/']) {
+        for comp in rest.split(sep) {
             match comp {
-                "" | "." => {}
-                ".." => {
+                b"" | b"." => {}
+                b".." => {
                     parts.pop().ok_or(DosError::PathNotFound)?;
                 }
                 c => parts.push(truncate_83(c)),
@@ -151,10 +153,10 @@ mod tests {
 
     #[test]
     fn long_names_truncate() {
-        assert_eq!(truncate_83("LONGFILENAME.TEXT"), "LONGFILE.TEX");
-        assert_eq!(truncate_83("ABCDEFGHIJ"), "ABCDEFGH");
-        assert_eq!(truncate_83("A.B"), "A.B");
-        assert_eq!(truncate_83("FOO."), "FOO.");
-        assert_eq!(truncate_83("*.*"), "*.*");
+        assert_eq!(truncate_83(b"LONGFILENAME.TEXT"), b"LONGFILE.TEX");
+        assert_eq!(truncate_83(b"ABCDEFGHIJ"), b"ABCDEFGH");
+        assert_eq!(truncate_83(b"A.B"), b"A.B");
+        assert_eq!(truncate_83(b"FOO."), b"FOO.");
+        assert_eq!(truncate_83(b"*.*"), b"*.*");
     }
 }

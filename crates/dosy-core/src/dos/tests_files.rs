@@ -298,3 +298,70 @@ fn free_space() {
     t.call(0x3600, 0, 0, 9).unwrap();
     assert_eq!(t.cpu.regs.ax(), 0xFFFF);
 }
+
+#[test]
+fn find_lists_dot_entries_in_subdirectories() {
+    let mut t = T::new();
+    t.path_call(0x3900, "D:\\TOOL").unwrap();
+    let h = t.create("D:\\TOOL\\FOO.TXT").unwrap();
+    t.call(0x3E00, h, 0, 0).unwrap();
+    assert_eq!(
+        t.find("D:\\TOOL\\*.*", 0x10).unwrap(),
+        [".", "..", "FOO.TXT"]
+    );
+    assert_eq!(t.find("D:\\TOOL\\*.*", 0).unwrap(), ["FOO.TXT"]);
+    assert_eq!(t.find("D:\\TOOL\\*", 0x10).unwrap(), [".", ".."]);
+    assert_eq!(
+        t.find("D:\\*.*", 0x10).unwrap(),
+        ["TOOL"],
+        "no dots in the root"
+    );
+    let p = t.s(0, "D:\\TOOL\\*.*");
+    t.call(0x4E00, 0, 0x10, p).unwrap();
+    assert_eq!(t.bus.read8(linear(DATA, 0x200 + 0x15)), 0x10);
+}
+
+#[test]
+fn find_next_resumes_from_the_snapshot() {
+    let mut t = T::new();
+    for n in ["D:\\A.TXT", "D:\\B.TXT", "D:\\C.TXT"] {
+        let h = t.create(n).unwrap();
+        t.call(0x3E00, h, 0, 0).unwrap();
+    }
+    t.call(0x1A00, 0, 0, 0x200).unwrap();
+    let p = t.s(0, "D:\\*.TXT");
+    t.call(0x4E00, 0, 0, p).unwrap();
+    // Changes after FindFirst don't disturb the running search.
+    t.path_call(0x4100, "D:\\B.TXT").unwrap();
+    t.create("D:\\0.TXT").unwrap();
+    let name = |t: &T| {
+        let a = linear(DATA, 0x200 + 0x1E) as usize;
+        t.bus.mem[a..a + 5].to_vec()
+    };
+    t.call(0x4F00, 0, 0, 0).unwrap();
+    assert_eq!(name(&t), b"B.TXT");
+    t.call(0x4F00, 0, 0, 0).unwrap();
+    assert_eq!(name(&t), b"C.TXT");
+    assert_eq!(t.call(0x4F00, 0, 0, 0), Err(0x12));
+}
+
+#[test]
+fn code_page_bytes_in_names() {
+    let mut t = T::new();
+    path::write_asciiz(&mut t.bus, DATA, 0, b"D:\\CAF\x82");
+    t.call(0x3900, 0, 0, 0).unwrap();
+    path::write_asciiz(&mut t.bus, DATA, 0, b"D:\\caf\x82\\\x81BER.txt");
+    let h = t.call(0x3C00, 0, 0, 0).unwrap();
+    t.call(0x3E00, h, 0, 0).unwrap();
+    t.call(0x1A00, 0, 0, 0x200).unwrap();
+    path::write_asciiz(&mut t.bus, DATA, 0, b"D:\\CAF\x82\\*.*");
+    t.call(0x4E00, 0, 0, 0).unwrap();
+    let a = linear(DATA, 0x200 + 0x1E) as usize;
+    assert_eq!(&t.bus.mem[a..a + 9], b"\x81BER.TXT\0");
+    path::write_asciiz(&mut t.bus, DATA, 0, b"D:\\CAF\x82");
+    t.call(0x3B00, 0, 0, 0).unwrap();
+    t.cpu.regs.set_si(0x300);
+    t.call(0x4700, 0, 0, 4).unwrap();
+    let a = linear(DATA, 0x300) as usize;
+    assert_eq!(&t.bus.mem[a..a + 5], b"CAF\x82\0");
+}
