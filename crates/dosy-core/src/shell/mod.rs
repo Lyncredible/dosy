@@ -2,12 +2,13 @@
 //! process. Its code is a ROM stub `L: FE 38 <ID_SHELL>; JMP L`; each
 //! callback advances the state machine. Programs run via `Dos::exec` with
 //! the stub's `JMP` as the resume point, so a child's exit lands back in the
-//! shell and the next callback shows the prompt again.
+//! shell and the next callback carries on (next batch line or prompt).
 //!
 //! Output goes through the INT 10h teletype (`bios::video`); line input
 //! reads the BIOS keyboard buffer and returns `HleResult::Retry` while it
 //! is empty. Both move to DOS CON (020) later.
 
+mod batch;
 mod builtins;
 #[cfg(test)]
 mod tests;
@@ -20,6 +21,8 @@ use crate::cpu::{Cpu, Seg, flags};
 use crate::dos::{self, Dos, psp};
 use crate::hle::{HleId, HleResult, ROM_SEGMENT, StubKind, install_stub};
 use crate::vfs::{DosError, DosPath, MemDrive};
+
+use batch::Frame;
 
 /// The shell's main loop callback.
 pub const ID_SHELL: HleId = HleId(HleId::SHELL_BASE);
@@ -40,14 +43,19 @@ pub fn z_drive() -> MemDrive {
     z
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum State {
-    /// Not started; the first callback picks the drive and runs autoexec.
+    /// Not started; the first callback picks the drive.
     Start,
-    /// Show the prompt (or run the next queued line).
+    /// Run the next pending command, batch line or queued line, or show
+    /// the prompt.
     Prompt,
     /// Reading a line from the keyboard.
     Input,
+    /// PAUSE: waiting for any key.
+    Pause,
+    /// CHOICE: waiting for one of these (uppercase) keys.
+    Choice(Vec<u8>),
 }
 
 /// What running one command line did.
@@ -63,7 +71,19 @@ pub(crate) enum Flow {
 pub struct Shell {
     state: State,
     line: Vec<u8>,
+    /// Startup lines, run as if typed.
     queued: VecDeque<String>,
+    /// Expanded commands to run before the next line (FOR bodies).
+    pending: VecDeque<Vec<u8>>,
+    /// Running batch files, innermost last.
+    frames: Vec<Frame>,
+    echo_on: bool,
+    /// Exit code of the last program (or CHOICE).
+    errorlevel: u8,
+    /// A child was started; read its exit code on the next callback.
+    child_running: bool,
+    /// The command being run came through CALL.
+    calling: bool,
     /// MOUNT descriptions per drive.
     mounts: [Option<String>; 26],
     /// A command ran since the last prompt: start a new line first.
@@ -82,6 +102,12 @@ impl Shell {
             state: State::Start,
             line: Vec::new(),
             queued: VecDeque::new(),
+            pending: VecDeque::new(),
+            frames: Vec::new(),
+            echo_on: true,
+            errorlevel: 0,
+            child_running: false,
+            calling: false,
             mounts: Default::default(),
             ran: false,
         }
@@ -111,6 +137,11 @@ impl Shell {
         }
     }
 
+    /// ERRORLEVEL as `IF ERRORLEVEL` sees it.
+    pub fn errorlevel(&self) -> u8 {
+        self.errorlevel
+    }
+
     pub fn callback<B: Bus>(
         &mut self,
         id: HleId,
@@ -122,29 +153,22 @@ impl Shell {
             log::warn!("unknown shell callback {:#06x}", id.0);
             return HleResult::Done;
         }
+        if std::mem::take(&mut self.child_running) {
+            self.errorlevel = dos.return_code(bus) as u8;
+        }
         loop {
-            match self.state {
+            match self.state.clone() {
                 State::Start => {
                     if !dos.is_mounted(dos.current_drive(bus)) {
                         dos.set_current_drive(bus, Z);
                     }
                     self.state = State::Prompt;
                 }
-                State::Prompt => match self.queued.pop_front() {
-                    Some(line) => {
-                        self.prompt(dos, bus);
-                        out(bus, line.as_bytes());
-                        out(bus, b"\n");
-                        if let Some(r) = self.finish(dos, cpu, bus, line.as_bytes()) {
-                            return r;
-                        }
+                State::Prompt => {
+                    if let Some(r) = self.next(dos, cpu, bus) {
+                        return r;
                     }
-                    None => {
-                        self.prompt(dos, bus);
-                        self.line.clear();
-                        self.state = State::Input;
-                    }
-                },
+                }
                 State::Input => {
                     let Some(key) = kbd::read_key(bus) else {
                         return HleResult::Retry;
@@ -156,8 +180,53 @@ impl Shell {
                         }
                     }
                 }
+                State::Pause => {
+                    if kbd::read_key(bus).is_none() {
+                        return HleResult::Retry;
+                    }
+                    out(bus, b"\n");
+                    self.state = State::Prompt;
+                }
+                State::Choice(keys) => {
+                    let Some(key) = kbd::read_key(bus) else {
+                        return HleResult::Retry;
+                    };
+                    let k = (key as u8).to_ascii_uppercase();
+                    if let Some(i) = keys.iter().position(|&c| c == k) {
+                        out(bus, &[k, b'\n']);
+                        self.errorlevel = i as u8 + 1;
+                        self.state = State::Prompt;
+                    }
+                }
             }
         }
+    }
+
+    /// One step in `Prompt`: `Some` when control must go back to the CPU.
+    fn next<B: Bus>(&mut self, dos: &mut Dos, cpu: &mut Cpu, bus: &mut B) -> Option<HleResult> {
+        if let Some(cmd) = self.pending.pop_front() {
+            return self.finish(dos, cpu, bus, &cmd);
+        }
+        if !self.frames.is_empty() {
+            let Some(raw) = self.read_batch_line(dos) else {
+                self.frames.pop();
+                if self.frames.is_empty() {
+                    self.echo_on = true;
+                }
+                return None;
+            };
+            return self.batch_line(dos, cpu, bus, &raw);
+        }
+        if let Some(line) = self.queued.pop_front() {
+            self.prompt(dos, bus);
+            out(bus, line.as_bytes());
+            out(bus, b"\n");
+            return self.finish(dos, cpu, bus, line.as_bytes());
+        }
+        self.prompt(dos, bus);
+        self.line.clear();
+        self.state = State::Input;
+        None
     }
 
     /// Run a line; `Some` when control must go back to the CPU.
@@ -171,7 +240,11 @@ impl Shell {
         self.ran |= !line.trim_ascii().is_empty();
         match self.run(dos, cpu, bus, line) {
             Flow::Continue => None,
-            Flow::Started | Flow::Exit => Some(HleResult::Done),
+            Flow::Started => {
+                self.child_running = true;
+                Some(HleResult::Done)
+            }
+            Flow::Exit => Some(HleResult::Done),
         }
     }
 
@@ -215,14 +288,24 @@ impl Shell {
     }
 }
 
-/// Write bytes to the screen; `\n` becomes CR LF.
+/// Write bytes to the screen; `\n` becomes CR LF and tabs expand to the
+/// next multiple of 8 columns, as DOS CON does.
 pub(crate) fn out<B: Bus>(bus: &mut B, s: &[u8]) {
     let page = bda::read8(bus, bda::VIDEO_PAGE);
     for &b in s {
-        if b == b'\n' {
-            video::teletype(bus, b'\r', page, 7);
+        match b {
+            b'\n' => {
+                video::teletype(bus, b'\r', page, 7);
+                video::teletype(bus, b'\n', page, 7);
+            }
+            b'\t' => {
+                let (col, _) = video::cursor(bus, page);
+                for _ in 0..8 - col % 8 {
+                    video::teletype(bus, b' ', page, 7);
+                }
+            }
+            _ => video::teletype(bus, b, page, 7),
         }
-        video::teletype(bus, b, page, 7);
     }
 }
 

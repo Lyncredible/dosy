@@ -27,7 +27,7 @@ Boot to a `Z:\>` / `C:\>` prompt and run commands and programs.
   via the INT 10h teletype; ECHO, CLS, VER, CD/CHDIR, `X:`, DIR (/W, sizes,
   free bytes), TYPE, SET, PATH, EXIT, MOUNT (`X path`, `-u X`, list);
   program lookup (cwd, then PATH; .COM, .EXE; .BAT reports "not supported").
-- Part 2: todo. Switch I/O to DOS CON / 0Ah (020), redirection `>`, `>>`,
+- Part 2: todo (after 029). Switch I/O to DOS CON / 0Ah (020), redirection `>`, `>>`,
   `<`, MD/RD, DEL/ERASE, REN, COPY.
 
 ## Acceptance criteria
