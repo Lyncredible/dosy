@@ -28,7 +28,7 @@ all its dependencies are `done`.
 | 012 | App window: winit + renderer + config | done | 005, 006 | worker-2 | [012](tasks/012-app-window.md) |
 | 013 | Machine loop, interrupts and HLE dispatch | done | 003, 007, 008 | worker-1 | [013](tasks/013-machine.md) |
 | 014 | CPU conformance tests (SingleStepTests) | todo | 007 | — | [014](tasks/014-cpu-conformance.md) |
-| 015 | BIOS HLE core | in-progress | 002 | worker-3 | [015](tasks/015-bios-hle.md) |
+| 015 | BIOS HLE core | done | 002 | worker-3 | [015](tasks/015-bios-hle.md) |
 | 016 | INT 10h video BIOS | todo | 010, 015 | — | [016](tasks/016-int10.md) |
 | 017 | DOS kernel core | done | 002 | worker-4 | [017](tasks/017-dos-kernel.md) |
 | 018 | DOS file and directory I/O | done | 004, 017 | worker-4 | [018](tasks/018-dos-file-io.md) |

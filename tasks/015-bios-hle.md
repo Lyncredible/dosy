@@ -1,6 +1,6 @@
 # 015 — BIOS HLE core
 
-- **Status:** in-progress
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 002
 - **Owner:** worker-3
@@ -25,10 +25,12 @@ Enough PC BIOS for DOS and programs: BDA, IVT, and the core interrupts.
   default IRQ EOI handlers, port 92h A20, robust `load_rom`. Done.
   INT 15h/86h returns at once (no wait yet). INT 08h sends EOI before
   chaining INT 1Ch (stub slots are 8 bytes).
-- Part 2: INT 09h and INT 16h (keyboard). Todo.
+- Part 2: INT 09h (reads port 60h via the Bus) and INT 16h; `Machine::new`
+  installs the BIOS and its handler. Done. Not handled: Ctrl-Break (INT 1Bh),
+  Print Screen, Alt+numpad codes, Ctrl-Alt-Del, INT 15h/4Fh intercept.
 
 ## Acceptance criteria
-- [ ] `FlatBus` tests per handler: tick rollover, key translation table
+- [x] `FlatBus` tests per handler: tick rollover, key translation table
       (letters, shifted, ctrl, extended arrows → 00/E0 scan), buffer full,
       INT 16/00 Retry then Done.
 
