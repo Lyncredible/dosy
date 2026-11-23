@@ -1,9 +1,9 @@
 # 009 — 8042 keyboard controller, port 61h, CMOS/RTC
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 003
-- **Owner:** —
+- **Owner:** worker-3
 
 ## Goal
 Keyboard scancodes reach the guest via IRQ1; CMOS gives the BIOS a clock.
@@ -20,8 +20,16 @@ Keyboard scancodes reach the guest via IRQ1; CMOS gives the BIOS a clock.
   injected base time advanced by emulated `now`, status regs A–D, equipment
   and memory size bytes. No host clock reads.
 
+## Notes (done)
+- Port 61h stays as 008 left it (bits 0/1/4/5); nothing keyboard-specific
+  is needed on an AT. Port 92h landed with 015.
+- Next byte reaches 60h 1 ms after a read, so chained INT 9 handlers that
+  re-read 60h see the same byte. `Machine::key_event` → `push_scancodes`.
+- `Machine::set_rtc` sets the CMOS clock and resyncs the BIOS tick count.
+- Not modelled: aux (mouse) port, RTC alarm/periodic IRQ8, CPU reset.
+
 ## Acceptance criteria
-- [ ] Tests: scancode queue ordering and IRQ1 pacing, 8042 commands,
+- [x] Tests: scancode queue ordering and IRQ1 pacing, 8042 commands,
       A20 toggles memory wrap, CMOS time advances with emulated time.
 
 ## Review follow-ups

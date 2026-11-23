@@ -131,9 +131,18 @@ impl Machine {
         self.hw.vga.frame()
     }
 
-    /// Inject host time; the core never reads the wall clock.
+    /// Set-1 scancode bytes (incl. E0 prefixes) from the host keyboard.
+    pub fn key_event(&mut self, scancodes: &[u8]) {
+        self.hw.push_scancodes(scancodes);
+    }
+
+    /// Inject host time (local, Unix seconds); the core never reads the
+    /// wall clock. Sets the CMOS clock and the BIOS tick count.
     pub fn set_rtc(&mut self, unix_secs: i64) {
         self.rtc_base = unix_secs;
+        let now = self.hw.now();
+        self.hw.cmos.set_time(unix_secs, now);
+        bios::sync_ticks(&mut self.hw);
     }
 
     fn irq_deliverable(&self) -> bool {
