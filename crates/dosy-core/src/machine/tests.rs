@@ -57,8 +57,8 @@ fn callback_dispatch_by_subsystem() {
     assert_eq!(*seen.lock().unwrap(), Some(HleId(0x0105)));
     assert_eq!(m.cpu.regs.ax(), 0x4242);
 
-    let mut m = machine(&[0xFE, 0x38, 0x01, 0x00]);
-    assert_eq!(m.run_for(100), RunExit::UnhandledCallback(HleId(1)));
+    let mut m = machine(&[0xFE, 0x38, 0x01, 0x02]); // shell: no handler yet
+    assert_eq!(m.run_for(100), RunExit::UnhandledCallback(HleId(0x0201)));
     assert_eq!(m.cpu.ip, 0);
 }
 
@@ -176,7 +176,8 @@ fn halt_fast_forwards_through_events() {
     m.hw.sched.schedule(250_000, DeviceId(200), 0);
     m.hw.sched.schedule(600_000, DeviceId(200), 1);
     assert_eq!(m.run_for(3000), RunExit::Budget);
-    assert!(m.hw.sched.is_empty(), "both events fired");
+    // Both events fired; only the BIOS timer tick remains.
+    assert!(m.hw.sched.next_due().unwrap() > 1_000_000);
     assert_eq!(m.hw.now(), 1_000_000);
 }
 
@@ -186,7 +187,7 @@ fn budget_stops_at_scheduler_deadline() {
     let mut m = machine(&[0xEB, 0xFE]);
     m.hw.sched.schedule(100_000_000 / 3000, DeviceId(200), 0); // ~100 cycles
     m.run_for(100);
-    assert!(m.hw.sched.is_empty());
+    assert!(m.hw.sched.next_due().unwrap() > 100_000_000 / 3000);
     assert!(m.hw.now() <= 34_000);
 }
 
@@ -222,4 +223,24 @@ fn deterministic() {
 fn machine_is_send() {
     fn assert_send<T: Send>() {}
     assert_send::<Machine>();
+}
+
+#[test]
+fn bios_int16_blocks_until_a_key_arrives() {
+    #[rustfmt::skip]
+    let mut m = machine(&[
+        0xB4, 0x00,             // mov ah, 0
+        0xCD, 0x16,             // int 16h
+        0x2E, 0xA3, 0x00, 0x02, // mov cs:[0200h], ax
+        0xFA, 0xF4,             // cli ; hlt
+    ]);
+    m.hw.write16(linear(CODE, 0x200), 0xFFFF);
+    m.run_for(3000 * 200); // 200 ms: several timer ticks, no key
+    assert!(m.cpu.halted);
+    assert_eq!(m.hw.read16(linear(CODE, 0x200)), 0xFFFF);
+    assert!(crate::bios::bda::read32(&mut m.hw, crate::bios::bda::TICKS) >= 3);
+
+    assert!(crate::bios::kbd::push_key(&mut m.hw, 0x1E61));
+    assert_eq!(m.run_for(3000 * 100), RunExit::Halted);
+    assert_eq!(m.hw.read16(linear(CODE, 0x200)), 0x1E61);
 }

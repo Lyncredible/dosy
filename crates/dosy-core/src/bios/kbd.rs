@@ -180,8 +180,14 @@ fn col(ctrl: bool, alt: bool, shift: bool) -> usize {
 
 /// Append a scan/ASCII word to the BDA ring buffer; false if full.
 pub fn push_key<B: Bus>(bus: &mut B, code: u16) -> bool {
-    let (start, end) = (bda::read16(bus, bda::KBD_BUF_START), bda::read16(bus, bda::KBD_BUF_END));
-    let (head, tail) = (bda::read16(bus, bda::KBD_HEAD), bda::read16(bus, bda::KBD_TAIL));
+    let (start, end) = (
+        bda::read16(bus, bda::KBD_BUF_START),
+        bda::read16(bus, bda::KBD_BUF_END),
+    );
+    let (head, tail) = (
+        bda::read16(bus, bda::KBD_HEAD),
+        bda::read16(bus, bda::KBD_TAIL),
+    );
     let mut next = tail.wrapping_add(2);
     if next >= end {
         next = start;
@@ -195,12 +201,18 @@ pub fn push_key<B: Bus>(bus: &mut B, code: u16) -> bool {
 }
 
 fn peek_raw<B: Bus>(bus: &mut B) -> Option<u16> {
-    let (head, tail) = (bda::read16(bus, bda::KBD_HEAD), bda::read16(bus, bda::KBD_TAIL));
+    let (head, tail) = (
+        bda::read16(bus, bda::KBD_HEAD),
+        bda::read16(bus, bda::KBD_TAIL),
+    );
     (head != tail).then(|| bus.read16(bda::BASE + head as Addr))
 }
 
 fn pop_raw<B: Bus>(bus: &mut B) {
-    let (start, end) = (bda::read16(bus, bda::KBD_BUF_START), bda::read16(bus, bda::KBD_BUF_END));
+    let (start, end) = (
+        bda::read16(bus, bda::KBD_BUF_START),
+        bda::read16(bus, bda::KBD_BUF_END),
+    );
     let mut head = bda::read16(bus, bda::KBD_HEAD).wrapping_add(2);
     if head >= end {
         head = start;
@@ -215,13 +227,26 @@ fn next_key<B: Bus>(bus: &mut B, enhanced: bool) -> Option<u16> {
         let code = peek_raw(bus)?;
         let (scan, ascii) = ((code >> 8) as u8, code as u8);
         if enhanced {
-            return Some(if ascii == 0xF0 && scan != 0 { code & 0xFF00 } else { code });
+            return Some(if ascii == 0xF0 && scan != 0 {
+                code & 0xFF00
+            } else {
+                code
+            });
+        }
+        if scan == 0xE0 {
+            // Keypad Enter / slash look like the main keys.
+            let main = if ascii == b'/' { 0x35 } else { 0x1C };
+            return Some(main << 8 | ascii as u16);
         }
         if ascii == 0xF0 || scan > 0x84 {
             pop_raw(bus);
             continue;
         }
-        return Some(if ascii == 0xE0 && scan != 0 { code & 0xFF00 } else { code });
+        return Some(if ascii == 0xE0 && scan != 0 {
+            code & 0xFF00
+        } else {
+            code
+        });
     }
 }
 
@@ -370,4 +395,162 @@ pub fn int16<B: Bus>(cpu: &mut Cpu, bus: &mut B) -> HleResult {
         _ => log::debug!("INT 16h AH={ah:02X}: unsupported"),
     }
     HleResult::Done
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bios::install;
+    use crate::bus::{FlatBus, linear};
+    use crate::cpu::Seg;
+
+    fn setup() -> (Cpu, FlatBus) {
+        let mut bus = FlatBus::new();
+        install(&mut bus);
+        bus.io_out.clear();
+        let mut cpu = Cpu::new();
+        cpu.sregs.set(Seg::Ss, 0x9000);
+        cpu.regs.set_sp(0xFFF0);
+        (cpu, bus)
+    }
+
+    fn feed(bus: &mut FlatBus, codes: &[u8]) {
+        for &c in codes {
+            bus.io_in.insert(0x60, c);
+            int09(bus);
+        }
+    }
+
+    fn int16_ax(cpu: &mut Cpu, bus: &mut FlatBus, ax: u16) -> HleResult {
+        cpu.regs.set_sp(0xFFF0);
+        cpu.regs.set_ax(ax);
+        int16(cpu, bus)
+    }
+
+    /// Drain the buffer through INT 16h/00 (or /10 if `enhanced`).
+    fn drain(cpu: &mut Cpu, bus: &mut FlatBus, enhanced: bool) -> Vec<u16> {
+        let ah = if enhanced { 0x1000 } else { 0 };
+        std::iter::from_fn(|| (int16_ax(cpu, bus, ah) == HleResult::Done).then(|| cpu.regs.ax()))
+            .collect()
+    }
+
+    fn keys(codes: &[u8], enhanced: bool) -> Vec<u16> {
+        let (mut cpu, mut bus) = setup();
+        feed(&mut bus, codes);
+        drain(&mut cpu, &mut bus, enhanced)
+    }
+
+    #[test]
+    fn translation_table() {
+        let table: &[(&[u8], u16)] = &[
+            (&[0x1E, 0x9E], 0x1E61),                   // a
+            (&[0x2A, 0x1E, 0xAA], 0x1E41),             // A
+            (&[0x36, 0x03, 0xB6], 0x0340),             // @
+            (&[0x3A, 0xBA, 0x1E], 0x1E41),             // caps: A
+            (&[0x3A, 0xBA, 0x2A, 0x1E], 0x1E61),       // caps+shift: a
+            (&[0x3A, 0xBA, 0x02], 0x0231),             // caps leaves digits
+            (&[0x1D, 0x1E, 0x9D], 0x1E01),             // ctrl-A
+            (&[0xE0, 0x1D, 0x2E, 0xE0, 0x9D], 0x2E03), // right ctrl-C
+            (&[0x38, 0x1E, 0xB8], 0x1E00),             // alt-A
+            (&[0x1C], 0x1C0D),                         // Enter
+            (&[0x01], 0x011B),                         // Esc
+            (&[0x3B], 0x3B00),                         // F1
+            (&[0x2A, 0x3B], 0x5400),                   // shift-F1
+            (&[0x48], 0x4800),                         // keypad up
+            (&[0x45, 0xC5, 0x48], 0x4838),             // numlock: 8
+            (&[0x39], 0x3920),                         // space
+        ];
+        for &(codes, want) in table {
+            assert_eq!(keys(codes, false), [want], "{codes:02X?}");
+        }
+    }
+
+    #[test]
+    fn extended_keys() {
+        // Grey arrows: 48E0 for enhanced reads, 4800 for standard ones.
+        assert_eq!(keys(&[0xE0, 0x48, 0xE0, 0xC8], true), [0x48E0]);
+        assert_eq!(keys(&[0xE0, 0x48], false), [0x4800]);
+        assert_eq!(
+            keys(&[0xE0, 0x2A, 0xE0, 0x4B], true),
+            [0x4BE0],
+            "fake shift ignored"
+        );
+        assert_eq!(keys(&[0x38, 0xE0, 0x48], true), [0x9800], "alt-up");
+        assert_eq!(keys(&[0xE0, 0x1C], true), [0xE00D], "keypad enter");
+        assert_eq!(keys(&[0xE0, 0x35], false), [0x352F], "keypad /");
+        assert_eq!(keys(&[0xE0, 0x35], true), [0xE02F]);
+        assert_eq!(keys(&[0xE0, 0x1C], false), [0x1C0D]);
+        // Enhanced-only keys are dropped by standard reads.
+        assert_eq!(keys(&[0x57], true), [0x8500]);
+        assert_eq!(keys(&[0x57, 0x1E], false), [0x1E61]);
+        assert_eq!(keys(&[0x38, 0x1A], true), [0x1A00]);
+        assert_eq!(keys(&[0x38, 0x1A], false), []);
+        // Pause sequence produces nothing.
+        assert_eq!(
+            keys(&[0xE1, 0x1D, 0x45, 0xE1, 0x9D, 0xC5, 0x1E], false),
+            [0x1E61]
+        );
+    }
+
+    #[test]
+    fn shift_flags_and_eoi() {
+        let (mut cpu, mut bus) = setup();
+        feed(&mut bus, &[0x2A, 0x1D, 0x3A, 0xBA]);
+        assert_eq!(bus.io_out, [(0x20, 0x20); 4]);
+        int16_ax(&mut cpu, &mut bus, 0x0200);
+        assert_eq!(cpu.regs.al(), LSHIFT | CTRL | CAPS);
+        int16_ax(&mut cpu, &mut bus, 0x1200);
+        assert_eq!(cpu.regs.ah(), LCTRL_DOWN);
+        assert_eq!(bda::read8(&mut bus, bda::KBD_FLAGS4), 0x04, "caps LED");
+        feed(&mut bus, &[0xAA, 0x9D]);
+        int16_ax(&mut cpu, &mut bus, 0x0200);
+        assert_eq!(cpu.regs.al(), CAPS);
+        // Insert toggles.
+        feed(&mut bus, &[0xE0, 0x52, 0xE0, 0xD2]);
+        int16_ax(&mut cpu, &mut bus, 0x0200);
+        assert_eq!(cpu.regs.al(), CAPS | INSERT);
+    }
+
+    #[test]
+    fn buffer_holds_15_keys() {
+        let (mut cpu, mut bus) = setup();
+        for _ in 0..20 {
+            feed(&mut bus, &[0x1E, 0x9E]);
+        }
+        assert_eq!(drain(&mut cpu, &mut bus, false).len(), 15);
+        // The ring wraps.
+        feed(&mut bus, &[0x30]);
+        assert_eq!(drain(&mut cpu, &mut bus, false), [0x3062]);
+        cpu.regs.set_cx(0x2C7A);
+        int16_ax(&mut cpu, &mut bus, 0x0500);
+        assert_eq!(cpu.regs.al(), 0);
+        assert_eq!(drain(&mut cpu, &mut bus, true), [0x2C7A]);
+    }
+
+    #[test]
+    fn int16_get_retries_then_returns() {
+        let (mut cpu, mut bus) = setup();
+        assert_eq!(int16_ax(&mut cpu, &mut bus, 0x0000), HleResult::Retry);
+        assert_eq!(int16_ax(&mut cpu, &mut bus, 0x1000), HleResult::Retry);
+        feed(&mut bus, &[0x1E]);
+        assert_eq!(int16_ax(&mut cpu, &mut bus, 0x0000), HleResult::Done);
+        assert_eq!(cpu.regs.ax(), 0x1E61);
+    }
+
+    #[test]
+    fn int16_peek_sets_zf() {
+        let (mut cpu, mut bus) = setup();
+        let zf = |bus: &mut FlatBus| bus.read16(linear(0x9000, 0xFFF4)) as u32 & flags::ZF != 0;
+        int16_ax(&mut cpu, &mut bus, 0x0100);
+        assert!(zf(&mut bus));
+        feed(&mut bus, &[0x1F]);
+        int16_ax(&mut cpu, &mut bus, 0x1100);
+        assert!(!zf(&mut bus));
+        assert_eq!(cpu.regs.ax(), 0x1F73);
+        assert_eq!(
+            drain(&mut cpu, &mut bus, false),
+            [0x1F73],
+            "peek keeps the key"
+        );
+    }
 }
