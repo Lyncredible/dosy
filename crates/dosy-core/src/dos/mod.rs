@@ -9,18 +9,25 @@
 //!
 //! Then the MCB chain from `FIRST_MCB` to the top of conventional memory.
 
+pub mod files;
+mod find;
 pub mod mcb;
+pub mod path;
 pub mod psp;
 pub mod time;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_files;
 
 use std::collections::HashSet;
 
 use crate::bus::{Bus, linear};
 use crate::cpu::{Cpu, Seg, flags};
 use crate::hle::{HleId, HleResult, ROM_SEGMENT, StubKind, install_stub};
+use crate::vfs::{DosPath, Drive};
+use files::SftEntry;
 use mcb::Strategy;
 use time::Date;
 
@@ -77,9 +84,18 @@ pub struct Process {
 }
 
 /// Host-side kernel state.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Dos {
-    pub strategy: Strategy,
+    /// Mounted drives, `A:` = 0.
+    pub drives: [Option<Box<dyn Drive>>; 26],
+    /// Current directory per drive.
+    pub cwd: [DosPath; 26],
+    /// System file table (see `files`).
+    pub sft: Vec<Option<SftEntry>>,
+    /// FindFirst directories, indexed by the id kept in the DTA.
+    search_dirs: Vec<(u8, DosPath)>,
+    /// INT 21h/58h strategy word as last set (see `Strategy::from_dos`).
+    pub strategy: u16,
     pub date: Date,
     pub processes: Vec<Process>,
     /// The first process (the shell); owns the master environment.
@@ -138,7 +154,16 @@ pub fn write_env<B: Bus>(bus: &mut B, seg: u16, vars: &[&str], program: &str) {
 
 impl Dos {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            sft: files::default_sft(),
+            ..Self::default()
+        }
+    }
+
+    /// Mount `drive` at index `letter` (`A:` = 0), resetting its cwd.
+    pub fn mount(&mut self, letter: u8, drive: Box<dyn Drive>) {
+        self.drives[letter as usize] = Some(drive);
+        self.cwd[letter as usize] = DosPath::root();
     }
 
     /// Install vectors, kernel data, the MCB chain, the master environment
@@ -198,6 +223,7 @@ impl Dos {
         psp::create_psp(bus, root, root + ROOT_PARAS, root, env);
         self.root_psp = root;
         self.processes.clear();
+        self.sft = files::default_sft();
         self.set_current_psp(bus, root);
         self.set_dta(bus, root, psp::TAIL);
     }
@@ -303,7 +329,13 @@ impl Dos {
             }
             0x48 => {
                 let owner = self.current_psp(bus);
-                match mcb::alloc(bus, FIRST_MCB, cpu.regs.bx(), owner, self.strategy) {
+                match mcb::alloc(
+                    bus,
+                    FIRST_MCB,
+                    cpu.regs.bx(),
+                    owner,
+                    Strategy::from_dos(self.strategy),
+                ) {
                     Ok(seg) => {
                         cpu.regs.set_ax(seg);
                         ok(cpu, bus);
@@ -349,12 +381,27 @@ impl Dos {
                 cpu.regs.set_bx(LOL_OFF);
             }
             0x58 => self.strategy_fn(cpu, bus),
-            _ => {
-                self.warn_once(0x2100 | ah as u16, || {
-                    format!("unimplemented INT 21h AH={ah:02X}h")
-                });
-                fail(cpu, bus, ERR_FUNCTION);
+            0x4E | 0x4F => {
+                let res = if ah == 0x4E {
+                    self.find_first(cpu, bus)
+                } else {
+                    self.find_next(bus)
+                };
+                match res {
+                    Ok(()) => ok(cpu, bus),
+                    Err(e) => fail(cpu, bus, e.code()),
+                }
             }
+            _ => match self.file_fn(cpu, bus, ah) {
+                Some(Ok(())) => ok(cpu, bus),
+                Some(Err(e)) => fail(cpu, bus, e.code()),
+                None => {
+                    self.warn_once(0x2100 | ah as u16, || {
+                        format!("unimplemented INT 21h AH={ah:02X}h")
+                    });
+                    fail(cpu, bus, ERR_FUNCTION);
+                }
+            },
         }
         HleResult::Done
     }
@@ -393,17 +440,12 @@ impl Dos {
     fn strategy_fn<B: Bus>(&mut self, cpu: &mut Cpu, bus: &mut B) {
         match cpu.regs.al() {
             0 => {
-                cpu.regs.set_ax(self.strategy as u16);
+                cpu.regs.set_ax(self.strategy);
                 ok(cpu, bus);
             }
             1 => {
-                // High bits select UMB use; there are no UMBs, so ignore them.
-                self.strategy = match cpu.regs.bx() & 0x3F {
-                    0 => Strategy::FirstFit,
-                    1 => Strategy::BestFit,
-                    2 => Strategy::LastFit,
-                    _ => return fail(cpu, bus, ERR_FUNCTION),
-                };
+                // Kept as given (UMB bits included) so 5800h reads it back.
+                self.strategy = cpu.regs.bx() & 0xFF;
                 ok(cpu, bus);
             }
             2 => {

@@ -124,6 +124,11 @@ impl DosPattern {
             .all(|(&p, &n)| p == b'?' || p == n)
     }
 
+    /// The 11-byte FCB form, `?` for wildcards.
+    pub fn fcb(&self) -> [u8; 11] {
+        self.0
+    }
+
     /// True if the pattern contains no wildcards.
     pub fn is_literal(&self) -> bool {
         !self.0.contains(&b'?')
