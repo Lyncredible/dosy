@@ -8,7 +8,6 @@
 //! ```
 
 use super::{DeviceId, Event, Hardware, IoCtx, IoDevice};
-use crate::memory::Mmio;
 
 /// `&mut IoCtx` borrowing the hardware's clock, IRQ lines and scheduler.
 macro_rules! ctx {
@@ -24,13 +23,14 @@ macro_rules! ctx {
     };
 }
 
-impl<M: Mmio> Hardware<M> {
+impl Hardware {
     pub(super) fn port_in(&mut self, port: u16) -> u8 {
         match port {
             0x20 | 0x21 | 0xA0 | 0xA1 => self.pic.read(port, ctx!(self)),
             0x40..=0x43 => self.pit.read(port, ctx!(self)),
             0x61 => self.port61_in(),
             0x92 => (self.mem.a20() as u8) << 1,
+            0x3B0..=0x3DF => self.vga.read(port, ctx!(self)),
             _ => self.unclaimed_in(port),
         }
     }
@@ -41,6 +41,7 @@ impl<M: Mmio> Hardware<M> {
             0x40..=0x43 => self.pit.write(port, val, ctx!(self)),
             0x61 => self.port61_out(val),
             0x92 => self.mem.set_a20(val & 0x02 != 0), // fast A20; reset bit ignored
+            0x3B0..=0x3DF => self.vga.write(port, val, ctx!(self)),
             _ => self.unclaimed_out(port, val),
         }
     }
@@ -48,6 +49,7 @@ impl<M: Mmio> Hardware<M> {
     pub(super) fn device_event(&mut self, ev: Event) {
         match ev.dev {
             DeviceId::PIT => self.pit.event(ev.kind, ctx!(self, ev.at)),
+            DeviceId::VGA => self.vga.event(ev.kind, ctx!(self, ev.at)),
             _ => log::warn!("event for unknown device {:?} kind {}", ev.dev, ev.kind),
         }
     }

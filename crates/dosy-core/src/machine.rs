@@ -13,6 +13,7 @@ use crate::dos::{self, Dos};
 use crate::hle::{HleId, HleResult, ROM_SEGMENT, Subsystem};
 use crate::hw::{DEFAULT_CYCLES_PER_MS, Hardware};
 use crate::vfs::{DosError, Drive};
+use crate::video::VideoFrame;
 
 /// Core-side machine settings (the app maps its `Config` to this).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,6 +81,7 @@ impl Machine {
         // After the BIOS: DOS sizes memory from the BDA.
         let mut dos = Dos::new();
         dos.install(&mut hw);
+        hw.start_video();
         let mut m = Self {
             cpu: Cpu::new(),
             hw,
@@ -122,6 +124,11 @@ impl Machine {
 
     pub fn set_cycles_per_ms(&mut self, n: u32) {
         self.hw.set_cycles_per_ms(n);
+    }
+
+    /// The frame completed at the latest vretrace (kept until the next one).
+    pub fn frame(&self) -> Option<&VideoFrame> {
+        self.hw.vga.frame()
     }
 
     /// Inject host time; the core never reads the wall clock.
