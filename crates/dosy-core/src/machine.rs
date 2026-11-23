@@ -69,8 +69,6 @@ pub struct Machine {
     /// HLE DOS kernel; handles `Subsystem::Dos` callbacks unless a
     /// handler is registered for them.
     pub dos: Dos,
-    /// Host RTC base in Unix seconds, for CMOS (009).
-    pub rtc_base: i64,
 }
 
 impl Machine {
@@ -89,7 +87,6 @@ impl Machine {
             hw,
             handlers: Default::default(),
             dos,
-            rtc_base: 0,
         };
         m.set_handler(Subsystem::Bios, Box::new(bios::handle));
         m
@@ -141,7 +138,6 @@ impl Machine {
     /// Inject host time (local, Unix seconds); the core never reads the
     /// wall clock. Sets the CMOS clock and the BIOS tick count.
     pub fn set_rtc(&mut self, unix_secs: i64) {
-        self.rtc_base = unix_secs;
         let now = self.hw.now();
         self.hw.cmos.set_time(unix_secs, now);
         bios::sync_ticks(&mut self.hw);

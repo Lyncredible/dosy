@@ -1,5 +1,6 @@
 //! winit event loop on the main thread: window, renderer, and the bridge to
-//! the emulation thread. Space cycles test patterns (until VGA lands).
+//! the emulation thread. Keys go to the guest as set-1 scancodes;
+//! Ctrl+Alt+F12 cycles test patterns (until VGA output is shown).
 
 use std::sync::Arc;
 
@@ -10,11 +11,12 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
 
 use crate::cli::render_config;
 use crate::emu::{self, EmuEvent, EmuHandle, EmuSetup, HostEvent};
+use crate::input::{Keyboard, Shortcut};
 use crate::mailbox::Mailbox;
 
 const TITLE: &str = "dosy";
@@ -33,6 +35,7 @@ struct App {
     frame: VideoFrame,
     has_frame: bool,
     error: Option<String>,
+    keyboard: Keyboard,
 }
 
 /// Starts the emulation thread, opens the window and runs until it closes.
@@ -55,6 +58,7 @@ pub fn run(config: Config, setup: EmuSetup) -> Result<(), String> {
         frame: VideoFrame::blank(1, 1),
         has_frame: false,
         error: None,
+        keyboard: Keyboard::default(),
     };
     let result = event_loop.run_app(&mut app).map_err(|e| e.to_string());
     app.emu.shutdown();
@@ -177,13 +181,22 @@ impl ApplicationHandler<EmuEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
-                        logical_key: Key::Named(NamedKey::Space),
-                        state: ElementState::Pressed,
-                        repeat: false,
+                        physical_key: PhysicalKey::Code(code),
+                        state,
                         ..
                     },
                 ..
-            } => self.emu.send(HostEvent::NextPattern),
+            } => match self.keyboard.key(code, state == ElementState::Pressed) {
+                Ok(bytes) if !bytes.is_empty() => self.emu.send(HostEvent::Key(bytes)),
+                Ok(_) => {}
+                Err(Shortcut::NextPattern) => self.emu.send(HostEvent::NextPattern),
+            },
+            WindowEvent::Focused(false) => {
+                let bytes = self.keyboard.release_all();
+                if !bytes.is_empty() {
+                    self.emu.send(HostEvent::Key(bytes));
+                }
+            }
             _ => {}
         }
     }
