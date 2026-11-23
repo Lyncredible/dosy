@@ -11,6 +11,7 @@ use dosy_core::machine::{Machine, MachineConfig, RunExit};
 use dosy_core::vfs::Drive;
 use dosy_core::video::VideoFrame;
 
+use crate::debug::DebugSetup;
 use crate::mailbox::Mailbox;
 use crate::pacing::Pacer;
 
@@ -42,6 +43,8 @@ pub struct EmuSetup {
     pub mounts: Vec<(char, Box<dyn Drive>)>,
     /// Shell lines to run at boot.
     pub autoexec: Vec<String>,
+    /// Tracing and INT call logging.
+    pub debug: DebugSetup,
 }
 
 /// Cycles per `run_for` call in `cycles = max` mode.
@@ -120,6 +123,10 @@ impl Emu {
             cfg.cycles_per_ms = n;
         }
         let mut machine = Machine::new(cfg);
+        match setup.debug.tracer() {
+            Ok(t) => machine.tracer = t,
+            Err(e) => eprintln!("dosy: trace file: {e}"),
+        }
         for (letter, drive) in setup.mounts {
             machine.mount(letter, drive);
         }
@@ -195,6 +202,9 @@ impl Emu {
                 }
             }
         };
+        if !matches!(exit, RunExit::Budget | RunExit::Exited(_)) {
+            eprint!("dosy: {}", self.machine.fault_report(exit));
+        }
         let why = match exit {
             RunExit::Budget => return,
             RunExit::Halted => "CPU halted".to_string(),
@@ -253,6 +263,7 @@ mod tests {
             rtc_unix_secs: 0,
             mounts: vec![('C', Box::new(c))],
             autoexec: vec!["C:".into(), "LOOP.COM".into()],
+            debug: DebugSetup::default(),
         }
     }
 

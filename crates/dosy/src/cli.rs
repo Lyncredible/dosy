@@ -8,6 +8,7 @@ use dosy_core::vfs::{Drive, MountOptions, open_mount};
 use dosy_core::video::Rgb8;
 use dosy_render::{RenderConfig, ScaleMode};
 
+use crate::debug::{DebugSetup, parse_int_list};
 use crate::emu::EmuSetup;
 
 pub const USAGE: &str = "\
@@ -18,6 +19,10 @@ usage: dosy [options] [PATH]
   -V, --version        print version and exit
   -h, --help           print this help and exit
   --config <file>      use <file> instead of the default config file
+  --trace[=<file>]     keep recent instructions for fault reports;
+                       with <file>, write every instruction there
+  --log-int=<list>     log INT calls, e.g. --log-int=21,10,16
+                       (log level: DOSY_LOG=error|warn|info|debug|trace)
   --<key>=<value>      override a config key (e.g. --cycles=max)";
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -32,6 +37,8 @@ pub struct Cli {
     pub path: Option<PathBuf>,
     /// `-c` commands, in order.
     pub commands: Vec<String>,
+    /// `--trace`, `--log-int`.
+    pub debug: DebugSetup,
 }
 
 /// Parses arguments (without the program name).
@@ -56,6 +63,13 @@ where
             _ => {
                 if let Some(p) = arg.strip_prefix("--config=") {
                     cli.config = Some(p.into());
+                } else if arg == "--trace" {
+                    cli.debug.trace = true;
+                } else if let Some(p) = arg.strip_prefix("--trace=") {
+                    cli.debug.trace = true;
+                    cli.debug.trace_file = Some(p.into());
+                } else if let Some(v) = arg.strip_prefix("--log-int=") {
+                    cli.debug.log_ints.extend(parse_int_list(v)?);
                 } else if arg.starts_with("--") {
                     cli.overrides.push(arg);
                 } else if arg.starts_with('-') && arg.len() > 1 {
@@ -127,6 +141,7 @@ pub fn emu_setup(
         rtc_unix_secs,
         mounts,
         autoexec,
+        debug: cli.debug.clone(),
     };
     Ok((setup, warnings))
 }
@@ -178,8 +193,16 @@ mod tests {
                 overrides: vec!["--scale=fit".into(), "--crt".into()],
                 path: Some("prog".into()),
                 commands: vec!["dir".into(), "x".into()],
+                debug: DebugSetup::default(),
             }
         );
+        let d = parse(["--trace=t.log", "--log-int=21,10", "--log-int=16"])
+            .unwrap()
+            .debug;
+        assert!(d.trace);
+        assert_eq!(d.trace_file, Some("t.log".into()));
+        assert_eq!(d.log_ints, [0x21, 0x10, 0x16]);
+        assert!(parse(["--trace"]).unwrap().debug.trace);
         assert_eq!(
             parse(["--config=a b.conf"]).unwrap().config,
             Some("a b.conf".into())
@@ -195,6 +218,7 @@ mod tests {
         assert!(parse(["-x"]).is_err());
         assert!(parse(["-c"]).is_err());
         assert!(parse(["a", "b"]).is_err());
+        assert!(parse(["--log-int=xyz"]).is_err());
         // A lone "-" is positional.
         assert_eq!(parse(["-"]).unwrap().path, Some("-".into()));
     }

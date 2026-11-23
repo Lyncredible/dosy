@@ -174,7 +174,11 @@ pub fn handle<B: Bus>(id: HleId, cpu: &mut Cpu, bus: &mut B) -> HleResult {
             bus.io_out8(0xA0, 0x20);
             bus.io_out8(0x20, 0x20);
         }
-        _ => log::warn!("unknown BIOS callback {:#06x}", id.0),
+        _ => {
+            crate::debug::warn_once("bios-callback", id.0 as u64, || {
+                format!("unknown BIOS callback {:#06x}", id.0)
+            });
+        }
     }
     HleResult::Done
 }
@@ -199,7 +203,10 @@ fn set_cf<B: Bus>(cpu: &mut Cpu, bus: &mut B, cf: bool) {
 
 /// Unsupported function: CF=1, AH=86h.
 fn unsupported<B: Bus>(cpu: &mut Cpu, bus: &mut B, int: u8) {
-    log::debug!("INT {int:02X}h AX={:04X}: unsupported", cpu.regs.ax());
+    let ax = cpu.regs.ax();
+    crate::debug::warn_once("bios-int", (int as u64) << 16 | ax as u64, || {
+        format!("INT {int:02X}h AX={ax:04X}: unsupported")
+    });
     cpu.regs.set_ah(0x86);
     set_cf(cpu, bus, true);
 }

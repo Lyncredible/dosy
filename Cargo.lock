@@ -376,6 +376,7 @@ dependencies = [
  "dosy-core",
  "dosy-render",
  "dosy-vfs",
+ "log",
  "wgpu",
  "winit",
 ]

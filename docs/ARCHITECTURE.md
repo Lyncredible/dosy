@@ -395,4 +395,6 @@ overrides the file. Unknown keys warn, never fail. Initial keys: `cycles`,
 - Private real-game smoke test reads a zip path from `DOSY_SMOKE_ZIP` and is
   skipped when unset. Never commit DOS software or name private test assets.
 - Diagnostics use the `log` facade; unimplemented opcodes/interrupts warn
-  once and surface as `RunExit::Fault` with a register dump.
+  once (`debug::warn_once`) and surface as `RunExit::Fault`;
+  `Machine::fault_report` gives registers, CS:IP bytes + disassembly and
+  the trace ring when `Machine::tracer` is set (opt-in, `--trace`).
