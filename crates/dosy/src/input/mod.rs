@@ -27,7 +27,21 @@ impl Keyboard {
         if pressed && code == KeyCode::F12 && self.ctrl_alt() {
             return Err(Shortcut::NextPattern);
         }
-        if pressed {
+        if code == KeyCode::Pause {
+            // Pause has no typematic or break code; Ctrl+Pause is Break.
+            if !pressed {
+                self.held.remove(&code);
+                return Ok(Vec::new());
+            }
+            if !self.held.insert(code) {
+                return Ok(Vec::new());
+            }
+            if self.held.contains(&KeyCode::ControlLeft)
+                || self.held.contains(&KeyCode::ControlRight)
+            {
+                return Ok(vec![0xE0, 0x46, 0xE0, 0xC6]);
+            }
+        } else if pressed {
             self.held.insert(code);
         } else if !self.held.remove(&code) {
             // Release of a key we never sent (e.g. pressed before focus).
@@ -65,6 +79,23 @@ mod tests {
         assert_eq!(k.release_all(), [0xAA, 0xE0, 0xC8]);
         assert_eq!(k.release_all(), Vec::<u8>::new());
         assert_eq!(k.key(KeyCode::KeyB, false), Ok(vec![]), "stray release");
+    }
+
+    #[test]
+    fn pause_does_not_repeat_and_ctrl_pause_is_break() {
+        let mut k = Keyboard::default();
+        let pause = vec![0xE1, 0x1D, 0x45, 0xE1, 0x9D, 0xC5];
+        assert_eq!(k.key(KeyCode::Pause, true), Ok(pause.clone()));
+        assert_eq!(k.key(KeyCode::Pause, true), Ok(vec![]), "no typematic");
+        assert_eq!(k.key(KeyCode::Pause, false), Ok(vec![]));
+        assert_eq!(k.key(KeyCode::Pause, true), Ok(pause));
+        assert_eq!(k.key(KeyCode::Pause, false), Ok(vec![]));
+        k.key(KeyCode::ControlRight, true).unwrap();
+        assert_eq!(
+            k.key(KeyCode::Pause, true),
+            Ok(vec![0xE0, 0x46, 0xE0, 0xC6])
+        );
+        assert_eq!(k.release_all(), [0xE0, 0x9D]);
     }
 
     #[test]
