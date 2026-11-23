@@ -604,7 +604,7 @@ fn write_chars<B: Bus>(bus: &mut B, ch: u8, attr: Option<u8>, page: u8, count: u
     if !is_text(bus) {
         if is_mode13(bus) {
             // Graphics: AH=09h and 0Ah both draw in colour BL.
-            let color = attr.unwrap_or(0x0F);
+            let color = attr.unwrap_or(0x0F); // int10 always passes BL
             let (cols, rows) = (cols(bus), rows(bus));
             for i in 0..count {
                 let pos = row * cols + col + i;
@@ -729,7 +729,11 @@ pub fn int10<B: Bus>(cpu: &mut Cpu, bus: &mut B) {
             cpu.regs.set_ax(bus.read16(a));
         }
         0x09 => write_chars(bus, al, Some(bl), bh, r.cx()),
-        0x0A => write_chars(bus, al, None, bh, r.cx()),
+        0x0A => {
+            // Text keeps the cell attribute; graphics modes draw in colour BL.
+            let attr = if is_text(bus) { None } else { Some(bl) };
+            write_chars(bus, al, attr, bh, r.cx());
+        }
         0x0C => {
             if is_mode13(bus) {
                 put_pixel13(bus, r.cx(), r.dx(), al);

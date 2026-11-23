@@ -197,4 +197,12 @@ fn bios_pixels_teletype_and_scroll() {
     assert_eq!(hw.read8(0xA0000 + 199 * 320), 0);
 
     assert_eq!(cursor(&mut hw, 0), (0, 24));
+
+    // AH=0Ah in graphics draws in colour BL, like AH=09h.
+    set_cursor(&mut hw, 0, 2, 0);
+    cpu.regs.set_ax(0x0ADB); // full block
+    cpu.regs.set_bx(0x0005);
+    cpu.regs.set_cx(1);
+    int10(&mut cpu, &mut hw);
+    assert_eq!(hw.read8(0xA0000 + 3 * 320 + 16 + 3), 0x05);
 }
