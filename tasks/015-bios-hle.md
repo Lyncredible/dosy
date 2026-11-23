@@ -30,6 +30,8 @@ Enough PC BIOS for DOS and programs: BDA, IVT, and the core interrupts.
       all unmasked). BIOS init should program the IMR the way a real BIOS
       leaves it: only the IRQs it services unmasked (timer, keyboard,
       cascade).
+- [ ] The PIT is unprogrammed at power-on, so BIOS init must program
+      channel 0 for the 18.2 Hz tick: `43h ← 36h`, then `40h ← 00h, 00h`.
 - [ ] (Low priority) Make `Memory::load_rom` / `Hardware::load_rom` robust. Today they apply
       the A20 mask to the start address only and panic when the copy runs past
       the end of RAM. Mask or wrap per byte (or clip) and never panic. Add a
