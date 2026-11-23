@@ -57,8 +57,8 @@ fn callback_dispatch_by_subsystem() {
     assert_eq!(*seen.lock().unwrap(), Some(HleId(0x0105)));
     assert_eq!(m.cpu.regs.ax(), 0x4242);
 
-    let mut m = machine(&[0xFE, 0x38, 0x01, 0x02]); // shell: no handler yet
-    assert_eq!(m.run_for(100), RunExit::UnhandledCallback(HleId(0x0201)));
+    let mut m = machine(&[0xFE, 0x38, 0x01, 0x03]); // driver: no handler
+    assert_eq!(m.run_for(100), RunExit::UnhandledCallback(HleId(0x0301)));
     assert_eq!(m.cpu.ip, 0);
 }
 

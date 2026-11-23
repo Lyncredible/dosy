@@ -264,7 +264,8 @@ impl Dos {
         Ok(self.drive_mut(drive)?.stat(&path)?.attr)
     }
 
-    fn chdir<B: Bus>(&mut self, bus: &mut B, raw: &[u8]) -> R {
+    /// INT 21h/3Bh: change the current directory of the path's drive.
+    pub fn chdir<B: Bus>(&mut self, bus: &mut B, raw: &[u8]) -> R {
         let (drive, path) = self.resolve_path(bus, raw)?;
         if !self.is_dir(drive, &path) {
             return Err(DosError::PathNotFound);

@@ -12,6 +12,7 @@ pub mod hle;
 pub mod hw;
 pub mod machine;
 pub mod memory;
+pub mod shell;
 pub mod video;
 
 /// Drive abstraction used by the DOS kernel.

@@ -12,6 +12,7 @@ use crate::cpu::{Cpu, CpuFault, CpuModel, Seg, Step};
 use crate::dos::{self, Dos};
 use crate::hle::{HleId, HleResult, ROM_SEGMENT, Subsystem};
 use crate::hw::{DEFAULT_CYCLES_PER_MS, Hardware};
+use crate::shell::{self, Shell};
 use crate::vfs::{DosError, Drive};
 use crate::video::VideoFrame;
 
@@ -69,6 +70,9 @@ pub struct Machine {
     /// HLE DOS kernel; handles `Subsystem::Dos` callbacks unless a
     /// handler is registered for them.
     pub dos: Dos,
+    /// Built-in COMMAND.COM; handles `Subsystem::Shell` callbacks unless a
+    /// handler is registered for them.
+    pub shell: Shell,
 }
 
 impl Machine {
@@ -81,12 +85,15 @@ impl Machine {
         // After the BIOS: DOS sizes memory from the BDA.
         let mut dos = Dos::new();
         dos.install(&mut hw);
+        shell::install(&mut hw);
+        dos.mount(shell::Z, Box::new(shell::z_drive()));
         hw.start_video();
         let mut m = Self {
             cpu: Cpu::with_model(cfg.cpu_model),
             hw,
             handlers: Default::default(),
             dos,
+            shell: Shell::new(),
         };
         m.set_handler(Subsystem::Bios, Box::new(bios::handle));
         m
@@ -105,6 +112,14 @@ impl Machine {
             "bad drive {letter:?}"
         );
         self.dos.mount((i - b'A' as usize) as u8, drive);
+    }
+
+    /// Boot to the built-in shell: call once after mounting. `autoexec`
+    /// lines run first, as if typed at the prompt. The shell runs on the
+    /// next `run_for`; `RunExit::Exited` only when the shell itself exits.
+    pub fn start_shell(&mut self, autoexec: &[String]) {
+        self.shell.queue(autoexec);
+        Shell::enter(&mut self.cpu, self.dos.root_psp);
     }
 
     /// Run a program as the top-level process (no shell): when it
@@ -239,6 +254,12 @@ impl Machine {
             Some(h) => Some(h(id, &mut self.cpu, &mut self.hw)),
             None if sub == Subsystem::Dos => {
                 Some(self.dos.callback(id, &mut self.cpu, &mut self.hw))
+            }
+            None if sub == Subsystem::Shell => {
+                Some(
+                    self.shell
+                        .callback(id, &mut self.dos, &mut self.cpu, &mut self.hw),
+                )
             }
             None => None,
         }

@@ -204,6 +204,10 @@ HLE EXEC — which switches CS:IP to the child; on child exit control returns
 to the stub and the shell resumes. Batch files are a stack of interpreter
 frames. Config `autoexec` lines run as an implicit batch at boot.
 
+The app boots with `Machine::new`, `mount`s, `set_rtc`, then
+`Machine::start_shell(&autoexec)`. Z: is a built-in drive; the shell starts
+there when C: isn't mounted. `RunExit::Exited` means the shell itself exited.
+
 ### Video output (`video.rs`, exists)
 
 The VGA device owns 256 KiB VRAM + registers and produces a `VideoFrame` at

@@ -73,6 +73,11 @@ impl Dos {
         bus.read8(sda(SDA_DRIVE))
     }
 
+    /// Select the current drive (0 = A:); no check that it is mounted.
+    pub fn set_current_drive<B: Bus>(&self, bus: &mut B, drive: u8) {
+        bus.write8(sda(SDA_DRIVE), drive);
+    }
+
     pub fn is_mounted(&self, drive: u8) -> bool {
         self.drives.get(drive as usize).is_some_and(|d| d.is_some())
     }

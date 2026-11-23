@@ -208,6 +208,14 @@ fn peek_raw<B: Bus>(bus: &mut B) -> Option<u16> {
     (head != tail).then(|| bus.read16(bda::BASE + head as Addr))
 }
 
+/// Take the next key as INT 16h/00 would (`None` when the buffer is empty).
+/// For HLE code that reads the keyboard directly (the shell).
+pub fn read_key<B: Bus>(bus: &mut B) -> Option<u16> {
+    let k = next_key(bus, false)?;
+    pop_raw(bus);
+    Some(k)
+}
+
 fn pop_raw<B: Bus>(bus: &mut B) {
     let (start, end) = (
         bda::read16(bus, bda::KBD_BUF_START),
