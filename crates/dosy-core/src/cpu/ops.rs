@@ -3,7 +3,7 @@
 use super::alu::{self, DivideError};
 use super::flags::{DF, ZF};
 use super::regs::{CX, DI, SI, Seg};
-use super::{Cpu, Prefixes, Rep, Rm, Step};
+use super::{Cpu, CpuModel, Prefixes, Rep, Rm, Step};
 use crate::bus::Bus;
 
 /// `kind` = ModRM `reg` / `op >> 3` order: ADD OR ADC SBB AND SUB XOR CMP.
@@ -36,7 +36,15 @@ macro_rules! alu_fn {
 macro_rules! shift_fn {
     ($name:ident, $t:ty, $rol:ident $ror:ident $rcl:ident $rcr:ident $shl:ident
      $shr:ident $sar:ident) => {
-        pub(super) fn $name(&mut self, kind: usize, a: $t, count: u8) -> $t {
+        pub(super) fn $name(&mut self, kind: usize, a: $t, mut count: u8) -> $t {
+            let mut a = a;
+            // The 8086 doesn't mask the count: shift 31 at a time.
+            if self.model == CpuModel::I8086 {
+                while count > 31 {
+                    a = self.$name(kind, a, 31);
+                    count -= 31;
+                }
+            }
             let f = self.flags;
             let (r, f) = match kind {
                 0 => alu::$rol(a, count, f),
@@ -155,7 +163,8 @@ impl Cpu {
         }
     }
 
-    /// One iteration of MOVS/CMPS/STOS/LODS/SCAS (`A4..=AF`, not A8/A9).
+    /// One iteration of MOVS/CMPS/STOS/LODS/SCAS (`A4..=AF`, not A8/A9) or
+    /// INS/OUTS (`6C..=6F`).
     /// With REP, each iteration is its own step: IP is rewound to the
     /// prefix while iterations remain, so interrupts and the cycle budget
     /// can cut in between iterations.
@@ -207,6 +216,30 @@ impl Cpu {
                     self.write_mem8(bus, Seg::Es, di, self.regs.al());
                 }
                 use_di = true;
+            }
+            // INS: ES:[DI] <- port DX
+            0x6C => {
+                let port = self.regs.dx();
+                if word {
+                    let v = bus.io_in16(port);
+                    self.write_mem16(bus, Seg::Es, di, v);
+                } else {
+                    let v = bus.io_in8(port);
+                    self.write_mem8(bus, Seg::Es, di, v);
+                }
+                use_di = true;
+            }
+            // OUTS: port DX <- [src:SI]
+            0x6E => {
+                let port = self.regs.dx();
+                if word {
+                    let v = self.read_mem16(bus, src, si);
+                    bus.io_out16(port, v);
+                } else {
+                    let v = self.read_mem8(bus, src, si);
+                    bus.io_out8(port, v);
+                }
+                use_si = true;
             }
             // LODS
             0xAC => {

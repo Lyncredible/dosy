@@ -92,6 +92,10 @@ impl Cpu {
 
 - Scope: 8086 + 80186 + common 386 real-mode (66/67 prefixes, 32-bit regs,
   FS/GS, MOVZX/SETcc/…). No protected mode, no FPU (BIOS reports none).
+- `CpuModel` (8086/186/386, default 386; config `cpu`) only changes what
+  detection code sees: FLAGS 12..15, PUSH SP, shift-count masking, `0F`.
+  Fault-class exceptions (#UD = INT 6, BOUND = INT 5, #DE) push the
+  faulting instruction's address.
 - `Flags` is `u32` (masks in `cpu/flags.rs`). `int_shadow` is set after
   STI / MOV SS / POP SS: the machine skips IRQs for that step.
 - On `Fault`, IP is rewound to the instruction start (incl. prefixes).

@@ -1,9 +1,9 @@
 # 025 — 80186 and 386 real-mode instructions
 
-- **Status:** todo
+- **Status:** in-progress
 - **Milestone:** M2
 - **Depends on:** 007
-- **Owner:** —
+- **Owner:** worker-2
 
 ## Goal
 Run code built by later compilers/assemblers that assume a 186/286/386 in
@@ -24,3 +24,13 @@ real mode.
 - [ ] Tests per group; CPU-detection idioms (PUSHF/POPF bit 12–15, AC flag)
       report the configured model.
 - [ ] 80286 SingleStepTests (via 014 harness) pass for real-mode opcodes.
+
+## Progress
+Part 1 (186/286): PUSHA/POPA, PUSH imm, IMUL imm, C0/C1, INS/OUTS, ENTER/
+LEAVE, BOUND (INT 5), `0F 01` SGDT/SIDT/LGDT/LIDT/SMSW/LMSW stubs, F1
+(INT1 on 386, LOCK alias before), `CpuModel` (`MachineConfig.cpu_model`,
+config key `cpu`): FLAGS 12..15, PUSH SP, shift-count masking, `0F` =
+POP CS / #UD (INT 6). 8086 aliases in 60..6F, C0/C1/C8/C9 are not emulated.
+The app still has to map `cpu` to `MachineConfig` (022 part 2).
+
+Part 2 (386): the rest of the scope list.

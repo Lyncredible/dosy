@@ -12,7 +12,7 @@ mod value;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
-pub use value::{Color, Cycles, Mount, PaddingColor, Percent, Scale, TextRender, Value};
+pub use value::{Color, CpuKind, Cycles, Mount, PaddingColor, Percent, Scale, TextRender, Value};
 
 /// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -102,6 +102,8 @@ keys! {
     /// `cycles`: instructions per emulated millisecond, or `max`.
     "cycles" => cycles: Cycles = Cycles::Fixed(NonZeroU32::new(3000).unwrap()), set_scalar,
         show_scalar;
+    /// `cpu`: `8086`, `186` or `386`.
+    "cpu" => cpu: CpuKind = CpuKind::I386, set_scalar, show_scalar;
     /// `mount` (list): `C:path`.
     "mount" => mount: Vec<Mount> = Vec::new(), set_list, show_list;
     /// `autoexec` (list): shell lines run at boot.

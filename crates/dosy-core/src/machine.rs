@@ -8,7 +8,7 @@
 use crate::bios;
 use crate::bus::{Bus, linear};
 use crate::cpu::flags::IF;
-use crate::cpu::{Cpu, CpuFault, Seg, Step};
+use crate::cpu::{Cpu, CpuFault, CpuModel, Seg, Step};
 use crate::dos::{self, Dos};
 use crate::hle::{HleId, HleResult, ROM_SEGMENT, Subsystem};
 use crate::hw::{DEFAULT_CYCLES_PER_MS, Hardware};
@@ -19,12 +19,14 @@ use crate::video::VideoFrame;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MachineConfig {
     pub cycles_per_ms: u32,
+    pub cpu_model: CpuModel,
 }
 
 impl Default for MachineConfig {
     fn default() -> Self {
         Self {
             cycles_per_ms: DEFAULT_CYCLES_PER_MS,
+            cpu_model: CpuModel::default(),
         }
     }
 }
@@ -83,7 +85,7 @@ impl Machine {
         dos.install(&mut hw);
         hw.start_video();
         let mut m = Self {
-            cpu: Cpu::new(),
+            cpu: Cpu::with_model(cfg.cpu_model),
             hw,
             handlers: Default::default(),
             dos,
