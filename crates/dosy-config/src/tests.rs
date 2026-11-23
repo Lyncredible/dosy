@@ -39,7 +39,7 @@ keybind = ctrl+enter=toggle_fullscreen
 ";
     let (c, d) = parse(text);
     assert_eq!(d, vec![]);
-    assert_eq!(c.cycles.get(), 12000);
+    assert_eq!(c.cycles.per_ms(), Some(12000));
     assert_eq!(c.scale, Scale::Stretch);
     assert!(!c.aspect && c.crt && !c.audio);
     assert_eq!(c.theme, "Builtin Dark");
@@ -107,7 +107,7 @@ fn includes_optional_and_cycles() {
     let mut c = Config::default();
     let mut d = Vec::new();
     c.load_file(&dir.join("main"), false, &mut d);
-    assert_eq!(c.cycles.get(), 200);
+    assert_eq!(c.cycles.per_ms(), Some(200));
     assert_eq!(d.len(), 2, "{d:?}");
     assert!(d[0].message.contains("cycle"));
     assert_eq!(
@@ -144,7 +144,7 @@ fn cli_overrides_in_order() {
         &mut d,
     );
     assert_eq!(rest, ["app.exe"]);
-    assert_eq!(c.cycles.get(), 300);
+    assert_eq!(c.cycles.per_ms(), Some(300));
     assert_eq!(c.mount.len(), 1);
     assert_eq!(c.mount[0].letter, 'D');
     assert!(c.crt);

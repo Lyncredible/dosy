@@ -4,7 +4,9 @@ const W: u32 = 10;
 const H: u32 = 8;
 
 fn headless() -> Option<(wgpu::Device, wgpu::Queue)> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+    desc.backends = default_backends();
+    let instance = wgpu::Instance::new(desc);
     let adapter =
         pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
             .ok()?;
@@ -62,7 +64,10 @@ fn render_to_vec(
     buf.slice(..)
         .map_async(wgpu::MapMode::Read, |r| r.expect("map"));
     device
-        .poll(wgpu::PollType::wait_indefinitely())
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(std::time::Duration::from_secs(10)),
+        })
         .expect("poll");
     let data = buf.slice(..).get_mapped_range().expect("mapped range");
     let mut out = Vec::new();

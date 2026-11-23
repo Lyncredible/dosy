@@ -3,6 +3,9 @@
 
 mod app;
 mod cli;
+mod emu;
+mod mailbox;
+mod pacing;
 mod pattern;
 
 use std::process::ExitCode;
@@ -27,7 +30,18 @@ fn main() -> ExitCode {
     for d in &diags {
         eprintln!("dosy: warning: {d}");
     }
-    match app::run(config) {
+    // RTC: host UTC for now (std has no local-offset API).
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let setup = match cli::emu_setup(&config, &cli, now) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("dosy: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    match app::run(config, setup) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("dosy: {e}");

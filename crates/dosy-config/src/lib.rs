@@ -12,7 +12,7 @@ mod value;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
-pub use value::{Color, Mount, PaddingColor, Percent, Scale, TextRender, Value};
+pub use value::{Color, Cycles, Mount, PaddingColor, Percent, Scale, TextRender, Value};
 
 /// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -99,8 +99,9 @@ macro_rules! keys {
 }
 
 keys! {
-    /// `cycles`: instructions per emulated millisecond.
-    "cycles" => cycles: NonZeroU32 = NonZeroU32::new(3000).unwrap(), set_scalar, show_scalar;
+    /// `cycles`: instructions per emulated millisecond, or `max`.
+    "cycles" => cycles: Cycles = Cycles::Fixed(NonZeroU32::new(3000).unwrap()), set_scalar,
+        show_scalar;
     /// `mount` (list): `C:path`.
     "mount" => mount: Vec<Mount> = Vec::new(), set_list, show_list;
     /// `autoexec` (list): shell lines run at boot.
