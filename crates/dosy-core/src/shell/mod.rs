@@ -66,6 +66,8 @@ pub struct Shell {
     queued: VecDeque<String>,
     /// MOUNT descriptions per drive.
     mounts: [Option<String>; 26],
+    /// A command ran since the last prompt: start a new line first.
+    ran: bool,
 }
 
 impl Default for Shell {
@@ -81,6 +83,7 @@ impl Shell {
             line: Vec::new(),
             queued: VecDeque::new(),
             mounts: Default::default(),
+            ran: false,
         }
     }
 
@@ -129,7 +132,7 @@ impl Shell {
                 }
                 State::Prompt => match self.queued.pop_front() {
                     Some(line) => {
-                        prompt(dos, bus);
+                        self.prompt(dos, bus);
                         out(bus, line.as_bytes());
                         out(bus, b"\n");
                         if let Some(r) = self.finish(dos, cpu, bus, line.as_bytes()) {
@@ -137,7 +140,7 @@ impl Shell {
                         }
                     }
                     None => {
-                        prompt(dos, bus);
+                        self.prompt(dos, bus);
                         self.line.clear();
                         self.state = State::Input;
                     }
@@ -165,10 +168,26 @@ impl Shell {
         bus: &mut B,
         line: &[u8],
     ) -> Option<HleResult> {
+        self.ran |= !line.trim_ascii().is_empty();
         match self.run(dos, cpu, bus, line) {
             Flow::Continue => None,
             Flow::Started | Flow::Exit => Some(HleResult::Done),
         }
+    }
+
+    /// `C:\DIR>`, after a line break when a command ran (as COMMAND.COM
+    /// does, so output that ends without one still gets its own line).
+    fn prompt<B: Bus>(&mut self, dos: &Dos, bus: &mut B) {
+        if std::mem::take(&mut self.ran) {
+            out(
+                bus, b"
+",
+            );
+        }
+        let d = dos.current_drive(bus);
+        let mut p = cwd_string(dos, d);
+        p.push(b'>');
+        out(bus, &p);
     }
 
     /// Line editing: returns the finished line on Enter.
@@ -225,13 +244,6 @@ pub(crate) fn cwd_string(dos: &Dos, drive: u8) -> Vec<u8> {
     s
 }
 
-fn prompt<B: Bus>(dos: &Dos, bus: &mut B) {
-    let d = dos.current_drive(bus);
-    let mut p = cwd_string(dos, d);
-    p.push(b'>');
-    out(bus, &p);
-}
-
 /// Message for a DOS error, as COMMAND.COM words it.
 pub(crate) fn error_text(e: DosError) -> &'static str {
     match e {
@@ -278,29 +290,26 @@ pub(crate) fn get_env<B: Bus>(dos: &Dos, bus: &mut B, name: &str) -> Option<Stri
 
 /// Set (or with an empty value, remove) a variable. Fails when the block is
 /// full.
-pub(crate) fn set_env<B: Bus>(
-    dos: &Dos,
-    bus: &mut B,
-    name: &str,
-    value: &str,
-) -> Result<(), ()> {
+pub(crate) fn set_env<B: Bus>(dos: &Dos, bus: &mut B, name: &str, value: &str) -> Result<(), ()> {
     let name = name.to_ascii_uppercase();
     let mut vars: Vec<String> = env_vars(dos, bus)
         .into_iter()
-        .filter(|v| !v.split_once('=').is_some_and(|(k, _)| k.eq_ignore_ascii_case(&name)))
+        .filter(|v| {
+            !v.split_once('=')
+                .is_some_and(|(k, _)| k.eq_ignore_ascii_case(&name))
+        })
         .collect();
     if !value.is_empty() {
         vars.push(format!("{name}={value}"));
     }
-    let size: usize = vars.iter().map(|v| v.len() + 1).sum::<usize>()
-        + 4
-        + dos::SHELL_PATH.len()
-        + 1;
+    let size: usize =
+        vars.iter().map(|v| v.len() + 1).sum::<usize>() + 4 + dos::SHELL_PATH.len() + 1;
     if size > dos::ENV_PARAS as usize * 16 {
         return Err(());
     }
     let refs: Vec<&str> = vars.iter().map(String::as_str).collect();
-    dos::write_env(bus, env_seg(dos, bus), &refs, dos::SHELL_PATH);
+    let seg = env_seg(dos, bus);
+    dos::write_env(bus, seg, &refs, dos::SHELL_PATH);
     Ok(())
 }
 

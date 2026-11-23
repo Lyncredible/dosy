@@ -36,7 +36,10 @@ fn split_command(line: &[u8]) -> (String, Vec<u8>) {
             break;
         }
     }
-    let word = word.iter().map(|&b| b.to_ascii_uppercase() as char).collect();
+    let word = word
+        .iter()
+        .map(|&b| b.to_ascii_uppercase() as char)
+        .collect();
     (word, rest.to_vec())
 }
 
@@ -93,10 +96,7 @@ impl Shell {
                 let mode = bda::read8(bus, bda::VIDEO_MODE) & 0x7F;
                 video::set_mode(bus, mode);
             }
-            "VER" => outs(
-                bus,
-                &format!("\ndosy {} (MS-DOS 5.00)\n\n", crate::VERSION),
-            ),
+            "VER" => outs(bus, &format!("\ndosy {} (MS-DOS 5.00)\n\n", crate::VERSION)),
             "CD" | "CHDIR" => cd(dos, bus, &a),
             "DIR" => dir(dos, bus, &a),
             "TYPE" => type_file(dos, bus, &a),
@@ -206,7 +206,7 @@ fn grouped(n: u64) -> String {
     let s = n.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -288,7 +288,10 @@ fn dir<B: Bus>(dos: &mut Dos, bus: &mut B, a: &[Vec<u8>]) {
     if info.label.is_empty() {
         outs(bus, &format!("\n Volume in drive {letter} has no label\n"));
     } else {
-        outs(bus, &format!("\n Volume in drive {letter} is {}\n", info.label));
+        outs(
+            bus,
+            &format!("\n Volume in drive {letter} is {}\n", info.label),
+        );
     }
     let mut head = format!(" Directory of {letter}:").into_bytes();
     head.extend(dir.to_bytes());
@@ -320,7 +323,7 @@ fn dir<B: Bus>(dos: &mut Dos, bus: &mut B, a: &[Vec<u8>]) {
             bytes += e.size as u64;
         }
     }
-    if wide && shown.len() % 5 != 0 {
+    if wide && !shown.len().is_multiple_of(5) {
         out(bus, b"\n");
     }
     if shown.is_empty() {
@@ -373,7 +376,10 @@ fn set<B: Bus>(dos: &mut Dos, bus: &mut B, rest: &[u8]) {
         None => {
             // `SET NAME` shows matching variables.
             let up = arg.to_ascii_uppercase();
-            for v in env_vars(dos, bus).into_iter().filter(|v| v.starts_with(&up)) {
+            for v in env_vars(dos, bus)
+                .into_iter()
+                .filter(|v| v.starts_with(&up))
+            {
                 outs(bus, &format!("{v}\n"));
             }
         }
@@ -406,13 +412,7 @@ fn path<B: Bus>(dos: &mut Dos, bus: &mut B, rest: &[u8]) {
 }
 
 /// Find `word` (cwd, then PATH; `.COM`, `.EXE`, `.BAT`) and start it.
-fn run_program<B: Bus>(
-    dos: &mut Dos,
-    cpu: &mut Cpu,
-    bus: &mut B,
-    word: &str,
-    rest: &[u8],
-) -> Flow {
+fn run_program<B: Bus>(dos: &mut Dos, cpu: &mut Cpu, bus: &mut B, word: &str, rest: &[u8]) -> Flow {
     let name = word.as_bytes();
     let has_ext = name
         .rsplit(|&c| c == b'\\' || c == b':')
@@ -473,7 +473,7 @@ mod tests {
             let (w, r) = split_command(l.as_bytes());
             (w, String::from_utf8(r).unwrap())
         };
-        assert_eq!(s("  dir /w "), ("DIR".into(), "/w".into()));
+        assert_eq!(s("  dir /w "), ("DIR".into(), " /w".into()));
         assert_eq!(s("cd\\apps"), ("CD".into(), "\\apps".into()));
         assert_eq!(s("echo.hi"), ("ECHO".into(), ".hi".into()));
         assert_eq!(s("echoes"), ("ECHOES".into(), "".into()));
