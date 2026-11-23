@@ -99,10 +99,20 @@ pub fn mount_source(p: &Path) -> Result<MountSource, String> {
 
 /// Emulation startup settings: config `mount`/`autoexec`, then `PATH` as
 /// C: (replacing a configured C:) followed by `C:` and the `-c` commands.
-pub fn emu_setup(cfg: &Config, cli: &Cli, rtc_unix_secs: i64) -> Result<EmuSetup, String> {
+/// Unusable config mounts are skipped with a warning (config never aborts);
+/// an unusable `PATH` is an error.
+pub fn emu_setup(
+    cfg: &Config,
+    cli: &Cli,
+    rtc_unix_secs: i64,
+) -> Result<(EmuSetup, Vec<String>), String> {
     let mut mounts = Vec::new();
+    let mut warnings = Vec::new();
     for m in &cfg.mount {
-        mounts.push((m.letter, mount_source(&m.path)?));
+        match mount_source(&m.path) {
+            Ok(src) => mounts.push((m.letter, src)),
+            Err(e) => warnings.push(format!("mount {}: skipped: {e}", m.letter)),
+        }
     }
     let mut autoexec = cfg.autoexec.clone();
     if let Some(p) = &cli.path {
@@ -111,12 +121,13 @@ pub fn emu_setup(cfg: &Config, cli: &Cli, rtc_unix_secs: i64) -> Result<EmuSetup
         autoexec.push("C:".into());
     }
     autoexec.extend(cli.commands.iter().cloned());
-    Ok(EmuSetup {
+    let setup = EmuSetup {
         cycles_per_ms: cfg.cycles.per_ms(),
         rtc_unix_secs,
         mounts,
         autoexec,
-    })
+    };
+    Ok((setup, warnings))
 }
 
 /// Maps the app config to renderer settings. Padding is in points, scaled
@@ -212,7 +223,7 @@ mod tests {
     fn emu_setup_merges_config_and_cli() {
         let dir = std::env::temp_dir().join(format!("dosy-setup-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let zip = dir.join("game.ZIP");
+        let zip = dir.join("disk.ZIP");
         std::fs::write(&zip, b"").unwrap();
         let d = dir.display();
         let cli = parse([
@@ -235,7 +246,8 @@ mod tests {
         cfg.apply_cli(&cli.overrides, &mut diags);
         assert!(diags.is_empty(), "{diags:?}");
 
-        let s = emu_setup(&cfg, &cli, 42).unwrap();
+        let (s, warnings) = emu_setup(&cfg, &cli, 42).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(s.cycles_per_ms, None);
         assert_eq!(s.rtc_unix_secs, 42);
         assert_eq!(
@@ -249,8 +261,15 @@ mod tests {
 
         let missing = parse([dir.join("nope").display().to_string()]).unwrap();
         assert!(emu_setup(&Config::default(), &missing, 0).is_err());
+        // A bad config mount only warns.
+        let mut bad = Config::default();
+        bad.set("mount", &format!("E:{}", dir.join("nope").display()))
+            .unwrap();
+        let (s, warnings) = emu_setup(&bad, &Cli::default(), 0).unwrap();
+        assert!(s.mounts.is_empty());
+        assert_eq!(warnings.len(), 1);
         assert_eq!(
-            mount_source(&dir.join("game.ZIP")).unwrap(),
+            mount_source(&dir.join("disk.ZIP")).unwrap(),
             MountSource::Zip(zip.clone())
         );
         std::fs::remove_dir_all(&dir).ok();

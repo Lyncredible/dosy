@@ -35,7 +35,12 @@ fn main() -> ExitCode {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
     let setup = match cli::emu_setup(&config, &cli, now) {
-        Ok(s) => s,
+        Ok((s, warnings)) => {
+            for w in &warnings {
+                eprintln!("dosy: warning: {w}");
+            }
+            s
+        }
         Err(e) => {
             eprintln!("dosy: {e}");
             return ExitCode::from(2);
