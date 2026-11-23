@@ -1,9 +1,9 @@
 # 046 — DOS kernel polish
 
-- **Status:** todo
+- **Status:** in-progress
 - **Milestone:** M2
 - **Depends on:** 018, 019
-- **Owner:** —
+- **Owner:** worker-3
 
 ## Goal
 Close the DOS-compatibility gaps that the 017/018/019 reviews found.
@@ -27,6 +27,13 @@ EXEC / processes:
   allocation strategy.
 - A failed `Machine::exec` restores the CPU state, or the behavior is
   documented on the function.
+
+## Progress
+- Part 1 (file I/O): done. Negative seek is covered by 011 (`dos_seek` in
+  `dosy-vfs`, used by `MemDrive` and `HostDrive`). FindFirst snapshots the
+  directory (with `.`/`..` outside the root) and 4Fh resumes from it.
+  Names and paths are handled as guest bytes end to end.
+- Part 2 (EXEC / processes): todo.
 
 ## Acceptance criteria
 - [ ] One test per item, using `MemDrive` and hand-built COM/MZ images.

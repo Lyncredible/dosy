@@ -13,8 +13,8 @@ fn legal(c: u8) -> bool {
 
 /// Split `NAME.EXT` and upper-case it; `None` if a field is too long, the
 /// base is empty, or there is more than one dot.
-fn split(s: &str) -> Option<(Vec<u8>, Vec<u8>)> {
-    let up = s.as_bytes().to_ascii_uppercase();
+fn split(s: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    let up = s.to_ascii_uppercase();
     let (base, ext) = match up.iter().position(|&c| c == b'.') {
         Some(i) => (up[..i].to_vec(), up[i + 1..].to_vec()),
         None => (up, Vec::new()),
@@ -30,6 +30,11 @@ pub struct DosName([u8; 11]);
 impl DosName {
     /// Parse `NAME.EXT` (case-insensitive). `.` and `..` are not names.
     pub fn parse(s: &str) -> Result<Self, DosError> {
+        Self::from_bytes(s.as_bytes())
+    }
+
+    /// Parse guest bytes; code-page bytes (>= 80h) are kept as they are.
+    pub fn from_bytes(s: &[u8]) -> Result<Self, DosError> {
         let (base, ext) = split(s).ok_or(DosError::PathNotFound)?;
         if base.len() > 8 || ext.len() > 3 || !base.iter().chain(&ext).all(|&c| legal(c)) {
             return Err(DosError::PathNotFound);
@@ -43,6 +48,18 @@ impl DosName {
     /// The 11-byte FCB form (`"README  TXT"`).
     pub fn fcb(&self) -> [u8; 11] {
         self.0
+    }
+
+    /// `NAME.EXT` as guest bytes (no padding, no dot without extension).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let trim = |b: &[u8]| b[..b.iter().rposition(|&c| c != b' ').map_or(0, |i| i + 1)].to_vec();
+        let mut out = trim(&self.0[..8]);
+        let ext = trim(&self.0[8..]);
+        if !ext.is_empty() {
+            out.push(b'.');
+            out.extend(ext);
+        }
+        out
     }
 
     pub fn base(&self) -> &str {
@@ -60,13 +77,11 @@ impl DosName {
     }
 }
 
+/// Shows code-page bytes as Latin-1 characters.
 impl fmt::Display for DosName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.ext().is_empty() {
-            write!(f, "{}", self.base())
-        } else {
-            write!(f, "{}.{}", self.base(), self.ext())
-        }
+        let s: String = self.to_bytes().iter().map(|&b| b as char).collect();
+        f.write_str(&s)
     }
 }
 
@@ -84,6 +99,10 @@ pub struct DosPattern([u8; 11]);
 
 impl DosPattern {
     pub fn parse(s: &str) -> Result<Self, DosError> {
+        Self::from_bytes(s.as_bytes())
+    }
+
+    pub fn from_bytes(s: &[u8]) -> Result<Self, DosError> {
         let (base, ext) = split(s).ok_or(DosError::PathNotFound)?;
         let mut fcb = [b' '; 11];
         Self::fill(&mut fcb[..8], &base)?;
@@ -118,10 +137,12 @@ impl DosPattern {
     }
 
     pub fn matches(&self, name: &DosName) -> bool {
-        self.0
-            .iter()
-            .zip(&name.0)
-            .all(|(&p, &n)| p == b'?' || p == n)
+        self.matches_fcb(&name.0)
+    }
+
+    /// Match a raw FCB name (e.g. `".          "` for the `.` entry).
+    pub fn matches_fcb(&self, fcb: &[u8; 11]) -> bool {
+        self.0.iter().zip(fcb).all(|(&p, &n)| p == b'?' || p == n)
     }
 
     /// The 11-byte FCB form, `?` for wildcards.
@@ -203,6 +224,19 @@ impl DosPath {
     /// True if `self` equals `other` or lies below it.
     pub fn starts_with(&self, other: &DosPath) -> bool {
         self.0.starts_with(&other.0)
+    }
+
+    /// `\A\B.TXT` as guest bytes (`\` for the root).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        if self.0.is_empty() {
+            return b"\\".to_vec();
+        }
+        let mut out = Vec::new();
+        for n in &self.0 {
+            out.push(b'\\');
+            out.extend(n.to_bytes());
+        }
+        out
     }
 }
 
@@ -286,6 +320,29 @@ mod tests {
         assert_eq!(DosPath::parse("C:\\X"), Err(DosError::PathNotFound));
         assert!(p.starts_with(&DosPath::parse("APPS").unwrap()));
         assert!(!p.starts_with(&DosPath::parse("APP").unwrap()));
+    }
+
+    #[test]
+    fn code_page_bytes_round_trip() {
+        let n = DosName::from_bytes(b"caf\x82.t\x81t").unwrap();
+        assert_eq!(n.to_bytes(), b"CAF\x82.T\x81T");
+        assert_eq!(n.to_string(), "CAF\u{82}.T\u{81}T");
+        let p = DosPath::from_names(vec![n, DosName::parse("x").unwrap()]);
+        assert_eq!(p.to_bytes(), b"\\CAF\x82.T\x81T\\X");
+        assert_eq!(DosPath::root().to_bytes(), b"\\");
+        let pat = DosPattern::from_bytes(b"CAF\x82*.*").unwrap();
+        assert!(pat.matches(&n));
+        assert!(pat.matches_fcb(b"CAF\x82    T\x81T") && !pat.matches_fcb(b"CAFE    TXT"));
+        assert!(
+            DosPattern::parse("*.*")
+                .unwrap()
+                .matches_fcb(b".          ")
+        );
+        assert!(
+            !DosPattern::parse("*.TXT")
+                .unwrap()
+                .matches_fcb(b"..         ")
+        );
     }
 
     #[test]

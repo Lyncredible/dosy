@@ -298,6 +298,7 @@ impl Dos {
     }
 
     /// Copy the parent's JFT into the child's, adding SFT references.
+    /// Handles opened with the no-inherit bit stay closed in the child.
     fn inherit_handles<B: Bus>(&mut self, bus: &mut B, parent: u16, child: u16) {
         let (pjft, plen) = jft_of(bus, parent);
         let (cjft, clen) = jft_of(bus, child);
@@ -305,11 +306,11 @@ impl Dos {
             let i = bus.read8(pjft + h);
             let open = self.sft.get_mut(i as usize).and_then(|e| e.as_mut());
             let v = match open {
-                Some(e) => {
+                Some(e) if !e.no_inherit => {
                     e.refs += 1;
                     i
                 }
-                None => super::files::JFT_FREE,
+                _ => super::files::JFT_FREE,
             };
             bus.write8(cjft + h, v);
         }

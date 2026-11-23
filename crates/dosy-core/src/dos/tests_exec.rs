@@ -269,3 +269,24 @@ fn fcb_parsing() {
     assert_eq!(&parse_fcb(""), b"\0           ");
     assert_eq!(&parse_fcb("toolong12.exe/x"), b"\0TOOLONG1EXE");
 }
+
+#[test]
+fn no_inherit_handles_stay_with_the_parent() {
+    let mut t = T::new();
+    path::write_asciiz(&mut t.bus, DATA, 0, b"C:\\TOOL.COM");
+    assert!(!t.int21(0x3D00, 0, 0));
+    let shared = t.cpu.regs.ax();
+    assert!(!t.int21(0x3D80, 0, 0)); // read, no-inherit
+    let private = t.cpu.regs.ax();
+    let root = t.dos.root_psp;
+    let sft_of = |t: &T, p: u16, h: u16| t.bus.mem[linear(p, psp::JFT + h) as usize];
+    let refs = |t: &T, h: u16| {
+        let i = sft_of(t, root, h) as usize;
+        t.dos.sft[i].as_ref().unwrap().refs
+    };
+    assert!(!t.exec(0, "C:\\APPS\\TOOL.EXE", ""));
+    let child = t.dos.current_psp(&mut t.bus);
+    assert_eq!(sft_of(&t, child, shared), sft_of(&t, root, shared));
+    assert_eq!(sft_of(&t, child, private), files::JFT_FREE);
+    assert_eq!((refs(&t, shared), refs(&t, private)), (2, 1));
+}

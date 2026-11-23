@@ -36,6 +36,8 @@ pub enum Open {
 pub struct SftEntry {
     pub refs: u16,
     pub open: Open,
+    /// Opened with 3Dh mode bit 7: EXEC does not pass it to children.
+    pub no_inherit: bool,
 }
 
 /// Initial SFT matching `psp::DEFAULT_JFT`: 0 = AUX, 1 = CON, 2 = PRN.
@@ -48,6 +50,7 @@ pub fn default_sft() -> Vec<Option<SftEntry>> {
         sft[i] = Some(SftEntry {
             refs,
             open: Open::Device(dev),
+            no_inherit: false,
         });
     }
     sft
@@ -89,14 +92,18 @@ impl Dos {
     }
 
     /// Put `open` in the SFT and a free JFT slot; returns the handle.
-    fn add_handle<B: Bus>(&mut self, bus: &mut B, open: Open) -> R<u16> {
+    fn add_handle<B: Bus>(&mut self, bus: &mut B, open: Open, no_inherit: bool) -> R<u16> {
         let h = self.free_handle(bus)?;
         let i = self
             .sft
             .iter()
             .position(|e| e.is_none())
             .ok_or(DosError::TooManyOpenFiles)?;
-        self.sft[i] = Some(SftEntry { refs: 1, open });
+        self.sft[i] = Some(SftEntry {
+            refs: 1,
+            open,
+            no_inherit,
+        });
         let (jft, _) = self.jft(bus);
         bus.write8(jft + h as u32, i as u8);
         Ok(h)
@@ -139,10 +146,17 @@ impl Dos {
                 drive,
                 path,
             },
+            false,
         )
     }
 
-    fn open_mode<B: Bus>(&mut self, bus: &mut B, raw: &[u8], mode: OpenMode) -> R<u16> {
+    fn open_mode<B: Bus>(
+        &mut self,
+        bus: &mut B,
+        raw: &[u8],
+        mode: OpenMode,
+        no_inherit: bool,
+    ) -> R<u16> {
         self.free_handle(bus)?;
         let (drive, path) = self.resolve_path(bus, raw)?;
         let file = self.drive_mut(drive)?.open(&path, mode)?;
@@ -154,6 +168,7 @@ impl Dos {
                 drive,
                 path,
             },
+            no_inherit,
         )
     }
 
@@ -349,7 +364,7 @@ impl Dos {
                 let p = path(bus);
                 OpenMode::from_dos(al)
                     .ok_or(DosError::InvalidAccess)
-                    .and_then(|m| self.open_mode(bus, &p, m))
+                    .and_then(|m| self.open_mode(bus, &p, m, al & 0x80 != 0))
                     .map(|h| cpu.regs.set_ax(h))
             }
             0x3E => self.close_handle(bus, bx),
@@ -396,8 +411,8 @@ impl Dos {
             0x47 => {
                 let si = r.si();
                 self.drive_arg(bus, r.dl()).map(|d| {
-                    let s = self.cwd[d as usize].to_string();
-                    write_asciiz(bus, ds, si, &s.as_bytes()[1..]);
+                    let s = self.cwd[d as usize].to_bytes();
+                    write_asciiz(bus, ds, si, &s[1..]);
                     cpu.regs.set_ax(0x0100);
                 })
             }

@@ -52,7 +52,7 @@ all its dependencies are `done`.
 | 031 | INT 33h mouse driver and host mouse | todo | 015, 022 | — | [031](tasks/031-mouse.md) |
 | 032 | XMS and EMS | todo | 017 | — | [032](tasks/032-xms-ems.md) |
 | 033 | Private game smoke test | todo | 021, 026, 028, 029 | — | [033](tasks/033-game-smoke-test.md) |
-| 046 | DOS kernel polish | todo | 018, 019 | — | [046](tasks/046-dos-kernel-polish.md) |
+| 046 | DOS kernel polish | in-progress | 018, 019 | worker-3 | [046](tasks/046-dos-kernel-polish.md) |
 
 ## M3 — Sound
 
