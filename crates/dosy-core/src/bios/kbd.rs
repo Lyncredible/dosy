@@ -258,13 +258,6 @@ fn next_key<B: Bus>(bus: &mut B, enhanced: bool) -> Option<u16> {
     }
 }
 
-/// Remove and return the next key (standard functions' view), if any.
-pub fn read_key<B: Bus>(bus: &mut B) -> Option<u16> {
-    let k = next_key(bus, false)?;
-    pop_raw(bus);
-    Some(k)
-}
-
 /// The next key without removing it.
 pub fn peek_key<B: Bus>(bus: &mut B) -> Option<u16> {
     next_key(bus, false)
