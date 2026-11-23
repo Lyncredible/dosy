@@ -25,3 +25,9 @@ Boot to a `Z:\>` / `C:\>` prompt and run commands and programs.
 - [ ] Headless test: boot `Machine` with C: = `MemDrive`, reach the prompt in
       `TextScreen`, inject keys for `echo hi`, see `hi`; `dir` lists files;
       running a tiny COM that prints and exits returns to the prompt.
+
+## Review follow-ups
+- [ ] Handle termination of the root process, together with 019. If the
+      shell itself exits (`EXIT` at top level) or a program runs without a
+      shell, the machine stops with a defined `RunExit`. It must not warn and
+      continue.

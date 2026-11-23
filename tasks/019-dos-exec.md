@@ -23,3 +23,12 @@ Load and run programs: INT 21h/4Bh and process lifecycle.
 - [ ] Tests: hand-built MZ with relocations loads with correct segments;
       COM register state; nested exec returns to parent with code in 4Dh;
       memory fully freed after child exit.
+
+## Review follow-ups
+- [ ] Find out what real DOS / DOSBox do on a failed INT 21h/4Ah grow: do
+      they resize the block to the maximum available before returning
+      error 8? Ours leaves it unchanged. Match them and add a test.
+- [ ] Decide what happens when the root (top-level) process terminates.
+      Today the kernel only warns and continues. It should return to the shell
+      (021), or stop the machine (`RunExit`) when there is no shell. Coordinate
+      with 021.
