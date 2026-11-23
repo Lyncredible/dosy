@@ -1,24 +1,22 @@
 //! Emulation thread: owns the `Machine`, paces it to real time, publishes
 //! frames to a [`Mailbox`] and wakes the main thread via a callback.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use dosy_core::cpu::CpuModel;
 use dosy_core::machine::{Machine, MachineConfig, RunExit};
+use dosy_core::vfs::Drive;
 use dosy_core::video::VideoFrame;
 
 use crate::mailbox::Mailbox;
 use crate::pacing::Pacer;
-use crate::pattern;
 
 /// Main thread → emulation thread.
 #[derive(Debug)]
 pub enum HostEvent {
-    /// Debug: cycle the test pattern (until VGA output exists).
-    NextPattern,
     /// Set-1 scancode bytes from the host keyboard.
     Key(Vec<u8>),
     Quit,
@@ -33,22 +31,15 @@ pub enum EmuEvent {
     Paused(String),
 }
 
-/// What a drive letter is backed by on the host.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MountSource {
-    Dir(PathBuf),
-    Zip(PathBuf),
-    File(PathBuf),
-}
-
 /// Everything the emulation thread needs at startup.
-#[derive(Debug, Clone)]
 pub struct EmuSetup {
     /// `None` = `cycles = max`.
     pub cycles_per_ms: Option<u32>,
+    pub cpu_model: CpuModel,
     /// Host wall clock (Unix seconds) for the RTC.
     pub rtc_unix_secs: i64,
-    pub mounts: Vec<(char, MountSource)>,
+    /// Opened drives (see `cli::open_drive`).
+    pub mounts: Vec<(char, Box<dyn Drive>)>,
     /// Shell lines to run at boot.
     pub autoexec: Vec<String>,
 }
@@ -57,6 +48,9 @@ pub struct EmuSetup {
 const MAX_CHUNK: u64 = 20_000;
 /// Nominal tick.
 const TICK: Duration = Duration::from_millis(1);
+/// Minimum wall time between published frames in `cycles = max` mode
+/// (the emulated 70 Hz retrace runs much faster there).
+const MIN_PRESENT: Duration = Duration::from_millis(14);
 
 pub struct EmuHandle {
     tx: Sender<HostEvent>,
@@ -104,10 +98,11 @@ struct Emu {
     pacer: Option<Pacer>,
     frames: Arc<Mailbox<VideoFrame>>,
     wake: Box<dyn Fn(EmuEvent) + Send>,
-    patterns: Vec<VideoFrame>,
-    current: usize,
     /// Reused frame buffer for publishing.
     out: VideoFrame,
+    /// `seq` of the last published frame.
+    last_seq: Option<u64>,
+    last_present: Option<Instant>,
     paused: bool,
 }
 
@@ -117,31 +112,33 @@ impl Emu {
         frames: Arc<Mailbox<VideoFrame>>,
         wake: Box<dyn Fn(EmuEvent) + Send>,
     ) -> Self {
-        let mut cfg = MachineConfig::default();
+        let mut cfg = MachineConfig {
+            cpu_model: setup.cpu_model,
+            ..MachineConfig::default()
+        };
         if let Some(n) = setup.cycles_per_ms {
             cfg.cycles_per_ms = n;
         }
         let mut machine = Machine::new(cfg);
-        machine.set_rtc(setup.rtc_unix_secs);
-        // Host drives (011/028) and the shell (021) don't exist yet.
-        for (letter, src) in &setup.mounts {
-            eprintln!("dosy: mount {letter}: {src:?} not available yet (host drives pending)");
+        for (letter, drive) in setup.mounts {
+            machine.mount(letter, drive);
         }
-        let _ = &setup.autoexec;
+        machine.set_rtc(setup.rtc_unix_secs);
+        // Shell (021): replace with `machine.start_shell(&setup.autoexec)`.
+        run_first_program(&mut machine, &setup.autoexec);
         Self {
             machine,
             pacer: setup.cycles_per_ms.map(Pacer::new),
             frames,
             wake,
-            patterns: vec![pattern::bars_320x200(), pattern::text_720x400()],
-            current: 0,
             out: VideoFrame::blank(1, 1),
+            last_seq: None,
+            last_present: None,
             paused: false,
         }
     }
 
     fn run(mut self, rx: Receiver<HostEvent>) {
-        self.publish();
         let mut last = Instant::now();
         loop {
             // Wait for the next tick (or forever while paused), handling events.
@@ -169,6 +166,7 @@ impl Emu {
             last = now;
             if !self.paused {
                 self.run_slice(elapsed);
+                self.publish();
             }
         }
     }
@@ -176,14 +174,12 @@ impl Emu {
     /// Returns false on quit.
     fn handle(&mut self, ev: HostEvent) -> bool {
         match ev {
-            HostEvent::Quit => return false,
-            HostEvent::NextPattern => {
-                self.current = (self.current + 1) % self.patterns.len();
-                self.publish();
+            HostEvent::Quit => false,
+            HostEvent::Key(bytes) => {
+                self.machine.key_event(&bytes);
+                true
             }
-            HostEvent::Key(bytes) => self.machine.key_event(&bytes),
         }
-        true
     }
 
     fn run_slice(&mut self, elapsed: Duration) {
@@ -211,11 +207,46 @@ impl Emu {
         (self.wake)(EmuEvent::Paused(why));
     }
 
+    /// Publishes the machine's latest completed frame if it is new (and,
+    /// in `cycles = max` mode, if [`MIN_PRESENT`] has passed).
     fn publish(&mut self) {
-        self.out.clone_from(&self.patterns[self.current]);
-        self.out.seq = self.out.seq.wrapping_add(1);
+        let Some(frame) = self.machine.frame() else {
+            return;
+        };
+        if Some(frame.seq) == self.last_seq {
+            return;
+        }
+        if self.pacer.is_none() && self.last_present.is_some_and(|t| t.elapsed() < MIN_PRESENT) {
+            return;
+        }
+        self.last_seq = Some(frame.seq);
+        self.last_present = Some(Instant::now());
+        self.out.clone_from(frame);
         self.frames.publish(&mut self.out);
         (self.wake)(EmuEvent::Frame);
+    }
+}
+
+/// Interim until the shell (021): run the first non-drive-switch line of
+/// `lines` as a program via `Machine::exec`. A bare `X:` line sets the
+/// drive used for paths without one.
+fn run_first_program(machine: &mut Machine, lines: &[String]) {
+    let mut drive = None;
+    for line in lines.iter().map(|l| l.trim()) {
+        let b = line.as_bytes();
+        if b.len() == 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {
+            drive = Some(line);
+            continue;
+        }
+        let (prog, tail) = line.split_once(' ').unwrap_or((line, ""));
+        let path = match drive {
+            Some(d) if !prog.contains(':') => format!("{d}\\{}", prog.trim_start_matches('\\')),
+            _ => prog.to_string(),
+        };
+        if let Err(e) = machine.exec(&path, tail) {
+            eprintln!("dosy: cannot run {path}: {e:?}");
+        }
+        return;
     }
 }
 
@@ -223,38 +254,68 @@ impl Emu {
 mod tests {
     use super::*;
 
+    use dosy_core::vfs::MemDrive;
+
+    /// C: holds LOOP.COM, which writes a white-on-blue 'A' to B800:0000
+    /// and spins.
     fn setup(cycles: Option<u32>) -> EmuSetup {
+        let mut c = MemDrive::new();
+        #[rustfmt::skip]
+        c.add_file("\\LOOP.COM", &[
+            0xB8, 0x00, 0xB8,                         // mov ax, B800h
+            0x8E, 0xC0,                               // mov es, ax
+            0x26, 0xC7, 0x06, 0x00, 0x00, 0x41, 0x1F, // mov word es:[0], 1F41h
+            0xEB, 0xFE,                               // jmp $
+        ]);
         EmuSetup {
             cycles_per_ms: cycles,
+            cpu_model: CpuModel::I386,
             rtc_unix_secs: 0,
-            mounts: vec![],
-            autoexec: vec![],
+            mounts: vec![('C', Box::new(c))],
+            autoexec: vec!["C:".into(), "LOOP.COM".into()],
         }
     }
 
     #[test]
-    fn publishes_frames_and_shuts_down() {
-        for cycles in [Some(1000), None] {
+    fn no_program_halts_at_int19() {
+        let frames = Arc::new(Mailbox::new(VideoFrame::blank(1, 1)));
+        let (wtx, wrx) = mpsc::channel();
+        let mut s = setup(Some(3000));
+        s.autoexec.clear();
+        let mut h = spawn(s, frames, move |e| {
+            let _ = wtx.send(e);
+        })
+        .unwrap();
+        let ev = wrx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(ev, EmuEvent::Paused("CPU halted".into()));
+        h.shutdown();
+    }
+
+    #[test]
+    fn publishes_machine_frames_and_shuts_down() {
+        for cycles in [Some(3000), None] {
             let frames = Arc::new(Mailbox::new(VideoFrame::blank(1, 1)));
             let (wtx, wrx) = mpsc::channel();
             let mut h = spawn(setup(cycles), frames.clone(), move |e| {
                 let _ = wtx.send(e);
             })
             .unwrap();
-            let first = wrx.recv_timeout(Duration::from_secs(5)).unwrap();
-            assert_eq!(first, EmuEvent::Frame);
             let mut f = VideoFrame::blank(1, 1);
-            assert!(frames.take(&mut f));
-            assert_eq!((f.width, f.height), (320, 200));
-
-            h.send(HostEvent::NextPattern);
-            loop {
-                if wrx.recv_timeout(Duration::from_secs(5)).unwrap() == EmuEvent::Frame {
-                    break;
+            let mut seqs = Vec::new();
+            while seqs.len() < 2 {
+                match wrx.recv_timeout(Duration::from_secs(5)).unwrap() {
+                    EmuEvent::Frame => {
+                        if frames.take(&mut f) {
+                            seqs.push(f.seq);
+                        }
+                    }
+                    EmuEvent::Paused(why) => panic!("paused: {why}"),
                 }
             }
-            assert!(frames.take(&mut f));
-            assert_eq!((f.width, f.height), (720, 400));
+            assert!(seqs[1] > seqs[0], "new frames only: {seqs:?}");
+            assert_eq!((f.width, f.height), (720, 400), "BIOS text mode");
+            // The 'A' cell: some pixel in it has the blue background (1).
+            assert!(f.pixels[..9].contains(&1), "{:?}", &f.pixels[..9]);
             h.shutdown();
         }
     }

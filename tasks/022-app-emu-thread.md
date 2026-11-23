@@ -30,8 +30,14 @@ Done (PR 1): emu thread (`emu.rs`), `HostEvent` channel, latest-wins
 in std), `dosy [PATH] -c cmd` → `EmuSetup { mounts, autoexec }` merged with
 config, clean shutdown, stop + title message on fault/halt.
 
-Remaining (blocked):
-- Mount `EmuSetup.mounts` once host/zip drives exist (011, 028).
-- Run `EmuSetup.autoexec` in the shell (021).
-- Publish `Machine` frames at vsync instead of test patterns (010); then
-  rate-limit presents in `cycles = max`.
+Done (PR 2): `Machine::frame()` published when its `seq` changes (vsync),
+at most every 14 ms in `cycles = max`; test patterns removed. Mounts open
+in the main thread via `open_mount` (a bad PATH exits 2, bad config mounts
+warn); `.zip` works once 028 extends `open_mount`. `cpu` → `cpu_model`.
+Interim until 021: the first non-`X:` autoexec/`-c` line runs via
+`Machine::exec`.
+
+Remaining:
+- After 021: replace `run_first_program` with
+  `machine.start_shell(&setup.autoexec)` (agreed with 021's author), then
+  check off "boots to the shell prompt".
