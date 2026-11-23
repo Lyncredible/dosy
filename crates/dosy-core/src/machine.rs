@@ -128,8 +128,9 @@ impl Machine {
                 }
                 // Skip to the next event if it falls inside the budget.
                 match next.map(|t| (t, self.hw.cycles_until(t))) {
-                    Some((t, c)) if c <= left => {
-                        self.hw.advance_to(t);
+                    Some((_, c)) if c <= left => {
+                        // Charge whole cycles so time and budget stay in step.
+                        self.hw.advance_cycles(c);
                         left -= c;
                     }
                     _ => {

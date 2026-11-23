@@ -35,6 +35,5 @@
       spurious IRQ7 vector instead.
 
 ## Notes
-- The ≈18 ticks/s test raises IRQ0 from the test at PIT tick times (the PIT
-  is still in 008 part 2). 008 part 2 should add the same test driven by
-  the real PIT. `key_event`/`frame()` wait for 009/010.
+- The ≈18 ticks/s test programs the real PIT (mode 3, count 0).
+  `key_event`/`frame()` wait for 009/010.

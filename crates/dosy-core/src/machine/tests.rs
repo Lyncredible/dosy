@@ -84,21 +84,23 @@ fn hlt_wakes_on_irq_and_time_passes() {
 }
 
 #[test]
-fn irq0_ticks_over_one_second() {
-    // Stand-in for the PIT (008 part 2): raise IRQ0 at each tick boundary.
-    let mut m = machine(&IDLE);
+fn pit_irq0_ticks_over_one_second() {
+    // Program PIT ch0 as the BIOS does (mode 3, count 0), then idle.
+    #[rustfmt::skip]
+    let mut m = machine(&[
+        0xB0, 0x36, 0xE6, 0x43, // mov al, 36h ; out 43h, al
+        0x30, 0xC0,             // xor al, al
+        0xE6, 0x40, 0xE6, 0x40, // out 40h, al (lo) ; out 40h, al (hi)
+        0xFB,                   // sti
+        0xF4, 0xEB, 0xFD,       // L: hlt ; jmp L
+    ]);
     install_irq0_counter(&mut m);
     let per_ms = m.hw.cycles_per_ms() as u64;
-    let mut next_tick = TICK_NS;
     for _ in 0..1000 {
         m.run_for(per_ms);
-        while m.hw.now() >= next_tick {
-            m.hw.pic.raise(0);
-            next_tick += TICK_NS;
-        }
     }
-    m.run_for(per_ms); // deliver a tick raised in the last slice
-    assert_eq!(irq0_count(&mut m), 18);
+    assert_eq!(m.hw.now(), 1_000_000_000);
+    assert_eq!(irq0_count(&mut m), 18, "1 s / {TICK_NS} ns");
 }
 
 #[test]
