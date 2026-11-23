@@ -1,9 +1,9 @@
 # 020 — DOS console I/O and character devices
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 016, 017
-- **Owner:** —
+- **Owner:** worker-4
 
 ## Goal
 Character I/O through DOS: keyboard in, screen out, devices CON/NUL.
@@ -19,13 +19,17 @@ Character I/O through DOS: keyboard in, screen out, devices CON/NUL.
 - Output via `bios::video::teletype`.
 
 ## Acceptance criteria
-- [ ] Tests: `AH=09` string to text memory, `0Ah` line with backspace,
+- [x] Tests: `AH=09` string to text memory, `0Ah` line with backspace,
       write to handle 1, redirect-ready (handle 1 can point to a file),
       Retry when no key.
 
 ## Review follow-ups
-- [ ] Ctrl-Break goes to INT 1Bh, and the BIOS handler sets the break flag
+- [x] Ctrl-Break goes to INT 1Bh, and the BIOS handler sets the break flag
       that drives DOS ^C handling (INT 23h on console I/O when BREAK is on).
-- [ ] Device names resolve by path: `NUL`, `CON`, `PRN`, `AUX` (with or
+- [x] Device names resolve by path: `NUL`, `CON`, `PRN`, `AUX` (with or
       without a directory or extension) open as devices via 3Dh. Handles 0–4
       are wired to the real devices (CON, CON, CON, AUX, PRN).
+
+Deferred: F1/F3 template editing in 0Ah; an INT 23h handler that returns
+with RETF and CF=1 (terminate request) is treated like IRET; AUX/PRN are
+sinks.

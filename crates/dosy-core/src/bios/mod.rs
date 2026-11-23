@@ -153,7 +153,12 @@ fn init_pic<B: Bus>(bus: &mut B) {
 pub fn handle<B: Bus>(id: HleId, cpu: &mut Cpu, bus: &mut B) -> HleResult {
     match id {
         INT08 => int08(bus),
-        INT09 => kbd::int09(bus),
+        INT09 => {
+            if kbd::int09(bus) {
+                // Returns to this stub's IRET.
+                cpu.interrupt(bus, 0x1B);
+            }
+        }
         INT10 => video::int10(cpu, bus),
         INT16 => return kbd::int16(cpu, bus),
         INT11 => cpu.regs.set_ax(bda::read16(bus, bda::EQUIPMENT)),

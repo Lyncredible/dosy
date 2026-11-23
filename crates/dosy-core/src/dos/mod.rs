@@ -9,6 +9,7 @@
 //!
 //! Then the MCB chain from `FIRST_MCB` to the top of conventional memory.
 
+mod console;
 pub mod exec;
 pub mod files;
 mod find;
@@ -19,6 +20,8 @@ pub mod time;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_console;
 #[cfg(test)]
 mod tests_exec;
 #[cfg(test)]
@@ -72,7 +75,9 @@ pub const ID_INT21: HleId = HleId(HleId::DOS_BASE + 0x21);
 pub const ID_INT22: HleId = HleId(HleId::DOS_BASE + 0x22);
 pub const ID_INT23: HleId = HleId(HleId::DOS_BASE + 0x23);
 pub const ID_INT24: HleId = HleId(HleId::DOS_BASE + 0x24);
+pub const ID_INT1B: HleId = HleId(HleId::DOS_BASE + 0x1B);
 pub const ID_INT28: HleId = HleId(HleId::DOS_BASE + 0x28);
+pub const ID_INT29: HleId = HleId(HleId::DOS_BASE + 0x29);
 pub const ID_INT2F: HleId = HleId(HleId::DOS_BASE + 0x2F);
 
 /// A running child process: where to resume its parent on terminate.
@@ -101,6 +106,8 @@ pub struct Dos {
     search_dirs: Vec<find::Search>,
     /// Set when the top-level process ends (see [`Dos::exit_code`]).
     exited: Option<u8>,
+    /// Console input state (see `console`).
+    pub console: console::Console,
     /// INT 21h/58h strategy word as last set (see `Strategy::from_dos`).
     pub strategy: u16,
     pub date: Date,
@@ -182,7 +189,9 @@ impl Dos {
             (ID_INT22, StubKind::Iret),
             (ID_INT23, StubKind::Iret),
             (ID_INT24, StubKind::Iret),
+            (ID_INT1B, StubKind::Iret),
             (ID_INT28, StubKind::Iret),
+            (ID_INT29, StubKind::Iret),
             (ID_INT2F, StubKind::Iret),
         ] {
             install_stub(bus, id, kind);
@@ -260,7 +269,19 @@ impl Dos {
             // shell) terminates: nothing is left to return to.
             ID_INT22 => self.exited = Some(bus.read8(sda(SDA_RETURN_CODE))),
             ID_INT24 => cpu.regs.set_al(3), // fail
-            ID_INT23 | ID_INT28 | ID_INT2F => {}
+            // Default ^C handler: end the current program. The top-level
+            // process ignores it (IRET restarts the interrupted call).
+            ID_INT23 => {
+                if !self.processes.is_empty() {
+                    self.terminate(cpu, bus, 0, 1);
+                }
+            }
+            ID_INT1B => self.console.break_pending = true,
+            ID_INT29 => {
+                let c = cpu.regs.al();
+                self.con_write(bus, &[c]);
+            }
+            ID_INT28 | ID_INT2F => {}
             _ => self.warn_once(id.0, || format!("unhandled DOS callback {:#06x}", id.0)),
         }
         HleResult::Done
@@ -283,6 +304,17 @@ impl Dos {
         let (ah, al) = (r.ah(), r.al());
         let ds = cpu.sregs.get(Seg::Ds);
         match ah {
+            0x01..=0x0C => return self.console_fn(cpu, bus, ah),
+            0x3F => {
+                if let Some((files::Device::Con, raw)) = self.handle_device(bus, cpu.regs.bx()) {
+                    return self.con_read_handle(cpu, bus, raw);
+                }
+                let res = self.file_fn(cpu, bus, ah).expect("3Fh is a file function");
+                match res {
+                    Ok(()) => ok(cpu, bus),
+                    Err(e) => fail(cpu, bus, e.code()),
+                }
+            }
             0x00 => self.terminate(cpu, bus, 0, 0),
             0x1A => self.set_dta(bus, ds, cpu.regs.dx()),
             0x25 => {

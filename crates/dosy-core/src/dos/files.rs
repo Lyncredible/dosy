@@ -13,13 +13,46 @@ pub const SFT_LEN: usize = 40;
 /// JFT value of an unused handle.
 pub const JFT_FREE: u8 = 0xFF;
 
-/// Character devices behind the default handles. Device I/O is a stub until
-/// task 020: reads return EOF, writes are discarded.
+/// Character devices. CON reads the keyboard and writes the screen (see
+/// `console`); NUL, AUX, PRN and CLOCK$ read EOF and discard writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
     Con,
     Aux,
     Prn,
+    Nul,
+    Clock,
+}
+
+impl Device {
+    /// IOCTL 00h device information word.
+    pub fn info(self) -> u16 {
+        match self {
+            // ISDEV | special (INT 29h) | ISCOT | ISCIN, not EOF.
+            Device::Con => 0x80D3,
+            Device::Nul => 0x8084,
+            Device::Clock => 0x8088,
+            Device::Aux | Device::Prn => 0x80C0,
+        }
+    }
+}
+
+/// Device named by the last component of a guest path (any directory, any
+/// extension): `CON`, `NUL`, `PRN`, `AUX`, `CLOCK$`, `LPTn`, `COMn`.
+pub fn device_name(raw: &[u8]) -> Option<Device> {
+    let last = raw
+        .rsplit(|&c| c == b'\\' || c == b'/' || c == b':')
+        .next()?;
+    let base = last.split(|&c| c == b'.').next()?;
+    let base = base.trim_ascii_end().to_ascii_uppercase();
+    Some(match base.as_slice() {
+        b"CON" => Device::Con,
+        b"NUL" => Device::Nul,
+        b"PRN" | b"LPT1" | b"LPT2" | b"LPT3" => Device::Prn,
+        b"AUX" | b"COM1" | b"COM2" | b"COM3" | b"COM4" => Device::Aux,
+        b"CLOCK$" => Device::Clock,
+        _ => return None,
+    })
 }
 
 pub enum Open {
@@ -38,6 +71,8 @@ pub struct SftEntry {
     pub open: Open,
     /// Opened with 3Dh mode bit 7: EXEC does not pass it to children.
     pub no_inherit: bool,
+    /// Device in raw (binary) mode, IOCTL 01h bit 5.
+    pub raw: bool,
 }
 
 /// Initial SFT matching `psp::DEFAULT_JFT`: 0 = AUX, 1 = CON, 2 = PRN.
@@ -51,6 +86,7 @@ pub fn default_sft() -> Vec<Option<SftEntry>> {
             refs,
             open: Open::Device(dev),
             no_inherit: false,
+            raw: false,
         });
     }
     sft
@@ -103,6 +139,7 @@ impl Dos {
             refs: 1,
             open,
             no_inherit,
+            raw: false,
         });
         let (jft, _) = self.jft(bus);
         bus.write8(jft + h as u32, i as u8);
@@ -131,6 +168,9 @@ impl Dos {
     ) -> R<u16> {
         // Fail early so a full JFT doesn't leave an empty file behind.
         self.free_handle(bus)?;
+        if let Some(dev) = device_name(raw) {
+            return self.add_handle(bus, Open::Device(dev), false);
+        }
         let (drive, path) = self.resolve_path(bus, raw)?;
         let d = self.drive_mut(drive)?;
         if exclusive && d.stat(&path).is_ok() {
@@ -158,6 +198,9 @@ impl Dos {
         no_inherit: bool,
     ) -> R<u16> {
         self.free_handle(bus)?;
+        if let Some(dev) = device_name(raw) {
+            return self.add_handle(bus, Open::Device(dev), no_inherit);
+        }
         let (drive, path) = self.resolve_path(bus, raw)?;
         let file = self.drive_mut(drive)?.open(&path, mode)?;
         self.add_handle(
@@ -212,8 +255,33 @@ impl Dos {
         let buf: Vec<u8> = (0..len)
             .map(|i| bus.read8(linear(seg, off.wrapping_add(i))))
             .collect();
+        self.write_bytes(bus, handle, &buf)
+    }
+
+    /// Device of `handle`, with its raw flag.
+    pub(super) fn handle_device<B: Bus>(
+        &mut self,
+        bus: &mut B,
+        handle: u16,
+    ) -> Option<(Device, bool)> {
+        match self.entry(bus, handle).ok()? {
+            SftEntry {
+                open: Open::Device(d),
+                raw,
+                ..
+            } => Some((*d, *raw)),
+            _ => None,
+        }
+    }
+
+    /// Write `buf` to `handle` (file or device); CX=0 truncates files.
+    pub(super) fn write_bytes<B: Bus>(&mut self, bus: &mut B, handle: u16, buf: &[u8]) -> R<u16> {
+        let len = buf.len() as u16;
         let e = self.entry(bus, handle)?;
         let Open::File { file, mode, .. } = &mut e.open else {
+            if let Open::Device(Device::Con) = e.open {
+                self.con_write(bus, buf);
+            }
             return Ok(len);
         };
         if !mode.can_write() {
@@ -292,6 +360,45 @@ impl Dos {
             return Err(DosError::NotSameDevice);
         }
         self.drive_mut(d1)?.rename(&p1, &p2)
+    }
+
+    /// INT 21h/44h subset: 00/01 device info, 06/07 status.
+    fn ioctl<B: Bus>(&mut self, cpu: &mut Cpu, bus: &mut B, al: u8, h: u16) -> R {
+        let dev = self.handle_device(bus, h);
+        let drive = match &self.entry(bus, h)?.open {
+            Open::File { drive, .. } => *drive as u16,
+            Open::Device(_) => 0,
+        };
+        match al {
+            0 => {
+                let info = match dev {
+                    Some((d, raw)) => d.info() | if raw { 0x20 } else { 0 },
+                    None => drive & 0x3F,
+                };
+                cpu.regs.set_dx(info);
+                cpu.regs.set_ax(info);
+            }
+            1 => {
+                if cpu.regs.dh() != 0 {
+                    return Err(DosError::InvalidFunction);
+                }
+                let raw = cpu.regs.dl() & 0x20 != 0;
+                if dev.is_some() {
+                    self.entry(bus, h)?.raw = raw;
+                }
+            }
+            6 => {
+                let ready = match dev {
+                    Some((Device::Con, _)) => self.con_ready(bus),
+                    Some(_) => false,
+                    None => true,
+                };
+                cpu.regs.set_al(if ready { 0xFF } else { 0 });
+            }
+            7 => cpu.regs.set_al(0xFF),
+            _ => return Err(DosError::InvalidFunction),
+        }
+        Ok(())
     }
 
     /// INT 21h/36h: (sectors per cluster, free clusters, bytes per sector,
@@ -407,6 +514,7 @@ impl Dos {
                     _ => Err(DosError::InvalidFunction),
                 }
             }
+            0x44 => self.ioctl(cpu, bus, al, bx),
             0x45 => self.dup_to(bus, bx, None).map(|h| cpu.regs.set_ax(h)),
             0x46 => self.dup_to(bus, bx, Some(cx)).map(|_| ()),
             0x47 => {

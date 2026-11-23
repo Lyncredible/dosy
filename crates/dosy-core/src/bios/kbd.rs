@@ -258,25 +258,41 @@ fn next_key<B: Bus>(bus: &mut B, enhanced: bool) -> Option<u16> {
     }
 }
 
-/// INT 09h body: one scancode from port 60h, then EOI.
-pub fn int09<B: Bus>(bus: &mut B) {
-    let code = bus.io_in8(0x60);
-    process_scancode(bus, code);
-    bus.io_out8(0x20, 0x20);
+/// The next key without removing it.
+pub fn peek_key<B: Bus>(bus: &mut B) -> Option<u16> {
+    next_key(bus, false)
 }
 
-fn process_scancode<B: Bus>(bus: &mut B, code: u8) {
+/// Empty the keyboard buffer.
+pub fn flush<B: Bus>(bus: &mut B) {
+    let tail = bda::read16(bus, bda::KBD_TAIL);
+    bda::write16(bus, bda::KBD_HEAD, tail);
+}
+
+/// BDA break flag (bit 7 of 0040:0071), set by Ctrl-Break.
+pub const BREAK_FLAG: u16 = 0x71;
+
+/// INT 09h body: one scancode from port 60h, then EOI. Returns true on
+/// Ctrl-Break: the caller then issues INT 1Bh.
+pub fn int09<B: Bus>(bus: &mut B) -> bool {
+    let code = bus.io_in8(0x60);
+    let brk = process_scancode(bus, code);
+    bus.io_out8(0x20, 0x20);
+    brk
+}
+
+fn process_scancode<B: Bus>(bus: &mut B, code: u8) -> bool {
     let mut f1 = bda::read8(bus, bda::KBD_FLAGS1);
     let mut f2 = bda::read8(bus, bda::KBD_FLAGS2);
     let mut f3 = bda::read8(bus, bda::KBD_FLAGS3);
     match code {
         0xE0 => {
             bda::write8(bus, bda::KBD_FLAGS3, f3 | LAST_E0);
-            return;
+            return false;
         }
         0xE1 => {
             bda::write8(bus, bda::KBD_FLAGS3, f3 | LAST_E1);
-            return;
+            return false;
         }
         _ => {}
     }
@@ -289,9 +305,10 @@ fn process_scancode<B: Bus>(bus: &mut B, code: u8) {
             f3 &= !LAST_E1;
         }
         bda::write8(bus, bda::KBD_FLAGS3, f3);
-        return;
+        return false;
     }
     let mut key = None;
+    let mut brk = false;
     match (scan, e0) {
         (0x2A | 0x36, true) => {} // fake shifts around grey keys
         (0x2A, false) => set(&mut f1, LSHIFT, make),
@@ -314,6 +331,17 @@ fn process_scancode<B: Bus>(bus: &mut B, code: u8) {
         }
         (0x3A, false) => toggle(&mut f1, &mut f2, CAPS, make),
         (0x45, false) => toggle(&mut f1, &mut f2, NUM, make),
+        // Ctrl-Break: E0 46 (only ever sent for Ctrl+Pause/Break), or plain
+        // 46 with Ctrl held (Ctrl+Scroll Lock on old keyboards).
+        (0x46, e0) if e0 || f1 & CTRL != 0 => {
+            if make {
+                brk = true;
+                flush(bus);
+                push_key(bus, 0x0000);
+                let f = bda::read8(bus, BREAK_FLAG);
+                bda::write8(bus, BREAK_FLAG, f | 0x80);
+            }
+        }
         (0x46, false) => toggle(&mut f1, &mut f2, SCROLL, make),
         (0x54, false) => set(&mut f2, SYSRQ_DOWN, make),
         _ if make => {
@@ -341,6 +369,7 @@ fn process_scancode<B: Bus>(bus: &mut B, code: u8) {
             log::debug!("keyboard buffer full; dropped {k:04X}");
         }
     }
+    brk
 }
 
 fn set(f: &mut u8, bit: u8, on: bool) {
