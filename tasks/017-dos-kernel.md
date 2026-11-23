@@ -1,9 +1,9 @@
 # 017 — DOS kernel core
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 002
-- **Owner:** —
+- **Owner:** worker-4
 
 ## Goal
 The HLE DOS kernel's memory model and INT 21h dispatcher.
@@ -20,6 +20,6 @@ The HLE DOS kernel's memory model and INT 21h dispatcher.
 - Unknown functions: log once, CF=1 AX=1.
 
 ## Acceptance criteria
-- [ ] `FlatBus` tests: allocate/free/resize incl. coalescing and error
+- [x] `FlatBus` tests: allocate/free/resize incl. coalescing and error
       codes (7, 8, 9), ≥ 600 KiB free after install, PSP fields
       (INT 20 at offset 0, top of memory, env segment), vectors, version.

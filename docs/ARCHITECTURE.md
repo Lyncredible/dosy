@@ -162,6 +162,15 @@ pub fn install_stub<B: Bus>(bus: &mut B, id: HleId, kind: StubKind) -> u32;  // 
   per-drive cwd, open-file table (`Box<dyn DosFile>`), JFT in PSP, process
   stack for EXEC/terminate.
 - EXE (MZ, relocations) and COM loaders; INT 21h/4B00 and 4B03.
+- `Dos::install(bus)` sets up vectors 20h–24h/28h/2Fh, kernel data at
+  segment `0080h` (List of Lists at `:0026`, SDA at `:0100`, `:0180–:1800`
+  free for SFT/CDS), the MCB chain from `0200h`, the master environment and
+  the root (shell) PSP. The machine calls `Dos::callback(id, cpu, bus)`.
+- Current PSP, DTA, return code and break flag live in the SDA (guest
+  memory). Handlers report CF through the IRET frame at SS:SP.
+- EXEC pushes `Process { psp, ss, sp }` (parent stack); `Dos::terminate`
+  pops it, frees the child's blocks, restores INT 22h–24h from its PSP and
+  jumps to its INT 22h address.
 
 ### Shell (`shell/`)
 

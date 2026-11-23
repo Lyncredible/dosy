@@ -6,6 +6,7 @@
 pub mod audio;
 pub mod bus;
 pub mod cpu;
+pub mod dos;
 pub mod hle;
 pub mod hw;
 pub mod memory;
