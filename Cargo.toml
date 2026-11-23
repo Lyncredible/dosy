@@ -17,6 +17,7 @@ dosy-render = { path = "crates/dosy-render" }
 log = "0.4"
 wgpu = "30"
 pollster = "1"
+winit = "0.30"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
