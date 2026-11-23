@@ -1,4 +1,4 @@
-"""Generate CP437 font tables from a BDF file. Usage: genfont.py in.bdf out.rs"""
+"""Generate CP437 font tables from a BDF file. Usage: genfont.py in.bdf out.rs LICENSE"""
 import sys
 
 CTRL = "\u0000☺☻♥♦♣♠•◘○◙♂♀♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼"

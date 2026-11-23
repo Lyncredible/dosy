@@ -302,8 +302,24 @@ impl Mmio for Vga {
     }
 }
 
+impl Vga {
+    /// Misc output bit 0 selects the CRTC / input status 1 ports: 3Dx
+    /// (colour) when set, 3Bx (mono) when clear. The other range floats.
+    fn decodes(&self, port: u16) -> bool {
+        let color = self.misc & 1 != 0;
+        match port {
+            0x3B0..=0x3BF => !color,
+            0x3D0..=0x3DF => color,
+            _ => true,
+        }
+    }
+}
+
 impl IoDevice for Vga {
     fn read(&mut self, port: u16, ctx: &mut IoCtx) -> u8 {
+        if !self.decodes(port) {
+            return 0xFF;
+        }
         match port {
             0x3B4 | 0x3D4 => self.crtc_index,
             0x3B5 | 0x3D5 => self
@@ -356,6 +372,9 @@ impl IoDevice for Vga {
     }
 
     fn write(&mut self, port: u16, val: u8, _ctx: &mut IoCtx) {
+        if !self.decodes(port) {
+            return;
+        }
         match port {
             0x3B4 | 0x3D4 => self.crtc_index = val,
             0x3B5 | 0x3D5 => {

@@ -29,8 +29,16 @@ fn register_round_trips() {
     hw.io_out16(0x3D4, 0x340F); // index 0F, data 34
     hw.io_out8(0x3D4, 0x0E);
     assert_eq!(hw.io_in8(0x3D5), 0x12);
-    hw.io_out8(0x3B4, 0x0F); // mono alias
+    // Colour mode (misc bit 0 = 1): the mono ports float.
+    hw.io_out8(0x3B4, 0x0F);
+    assert_eq!(hw.io_in8(0x3B5), 0xFF);
+    assert_eq!(hw.io_in8(0x3BA), 0xFF);
+    // Mono mode: 3Bx decodes, 3Dx floats.
+    hw.io_out8(0x3C2, 0x66);
+    hw.io_out8(0x3B4, 0x0F);
     assert_eq!(hw.io_in8(0x3B5), 0x34);
+    assert_eq!(hw.io_in8(0x3D5), 0xFF);
+    hw.io_out8(0x3C2, 0x67);
 
     hw.io_out16(0x3C4, 0x0F02);
     assert_eq!(hw.vga.seq[2], 0x0F);
