@@ -1,9 +1,9 @@
 # 011 — Host directory and single-file drives
 
-- **Status:** todo
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 004
-- **Owner:** —
+- **Owner:** worker-4
 
 ## Goal
 Mount a host directory (or one file) as a DOS drive with 8.3 names.
@@ -19,5 +19,5 @@ Mount a host directory (or one file) as a DOS drive with 8.3 names.
 - `open_mount(path, opts)` for dir/file (zip arm added by 028).
 
 ## Acceptance criteria
-- [ ] Tests using a temp dir: mapping of long/mixed-case/duplicate names,
+- [x] Tests using a temp dir: mapping of long/mixed-case/duplicate names,
       round-trip writes, read-only enforcement, root-escape rejection.

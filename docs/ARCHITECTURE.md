@@ -338,9 +338,13 @@ pub trait DosFile: Send {
   on open), `OverlayDrive` (read-only lower + writable upper, whiteouts).
 - 8.3 mapping (HostDrive/ZipDrive): valid 8.3 names are uppercased; others
   become `NAME~N.EXT`, `N` assigned by sorted host name per directory, so
-  mapping is deterministic. Lookup is case-insensitive on every host.
-- `dosy_vfs::open_mount(path, opts) -> Result<Box<dyn Drive>>` picks
-  dir / zip / file. The shell's `MOUNT` uses it.
+  mapping is deterministic (`shortname::map_dir`). Lookup is
+  case-insensitive on every host. HostDrive canonicalizes resolved paths and
+  rejects anything outside the mount root (symlinks). Host times are UTC.
+- `dosy_vfs::open_mount(path, &MountOptions) -> io::Result<Box<dyn Drive>>`
+  picks dir / zip / file. The shell's `MOUNT` uses it.
+- Seeks use DOS 32-bit wrapping (`dos_seek`): seeking before the start
+  succeeds; the following read sees EOF and a write fails.
 
 ## Configuration (`dosy-config`)
 
