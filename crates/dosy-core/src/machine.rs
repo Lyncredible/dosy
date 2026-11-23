@@ -9,6 +9,7 @@ use crate::bios;
 use crate::bus::{Bus, linear};
 use crate::cpu::flags::IF;
 use crate::cpu::{Cpu, CpuFault, CpuModel, Seg, Step};
+use crate::debug::{self, Tracer};
 use crate::dos::{self, Dos};
 use crate::hle::{HleId, HleResult, ROM_SEGMENT, Subsystem};
 use crate::hw::{DEFAULT_CYCLES_PER_MS, Hardware};
@@ -73,6 +74,9 @@ pub struct Machine {
     /// Built-in COMMAND.COM; handles `Subsystem::Shell` callbacks unless a
     /// handler is registered for them.
     pub shell: Shell,
+    /// Opt-in instruction trace / INT log (`None` = off, one branch per
+    /// instruction).
+    pub tracer: Option<Box<Tracer>>,
 }
 
 impl Machine {
@@ -94,6 +98,7 @@ impl Machine {
             handlers: Default::default(),
             dos,
             shell: Shell::new(),
+            tracer: None,
         };
         m.set_handler(Subsystem::Bios, Box::new(bios::handle));
         m
@@ -207,6 +212,9 @@ impl Machine {
             }
             let mut used = 0u64;
             let exit = loop {
+                if let Some(t) = self.tracer.as_deref_mut() {
+                    t.record(&self.cpu, &mut self.hw);
+                }
                 let (step, cost) = self.cpu.step(&mut self.hw);
                 used += cost as u64;
                 self.hw.advance_cycles(cost as u64);
@@ -246,6 +254,21 @@ impl Machine {
                 return exit;
             }
         }
+    }
+
+    /// Human-readable report for a `run_for` result that stopped the
+    /// machine: registers, bytes and disassembly at CS:IP, trace history.
+    pub fn fault_report(&mut self, exit: RunExit) -> String {
+        let why = match exit {
+            RunExit::Budget => "running".to_string(),
+            RunExit::Halted => "CPU halted with interrupts disabled".to_string(),
+            RunExit::Fault(CpuFault::InvalidOpcode { cs, ip, opcode }) => {
+                format!("invalid opcode {opcode:02X}h at {cs:04X}:{ip:04X}")
+            }
+            RunExit::UnhandledCallback(id) => format!("unhandled HLE callback {:04X}h", id.0),
+            RunExit::Exited(code) => format!("program exited with code {code}"),
+        };
+        debug::fault_report(&why, &self.cpu, &mut self.hw, self.tracer.as_deref())
     }
 
     fn dispatch(&mut self, id: HleId) -> Option<HleResult> {

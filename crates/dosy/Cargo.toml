@@ -12,6 +12,7 @@ dosy-core.workspace = true
 dosy-vfs.workspace = true
 dosy-config.workspace = true
 dosy-render.workspace = true
+log.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 

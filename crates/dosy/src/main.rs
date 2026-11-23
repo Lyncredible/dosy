@@ -3,6 +3,7 @@
 
 mod app;
 mod cli;
+mod debug;
 mod emu;
 mod input;
 mod mailbox;
@@ -26,6 +27,7 @@ fn main() -> ExitCode {
         println!("{}", cli::USAGE);
         return ExitCode::SUCCESS;
     }
+    debug::init_logger(!cli.debug.log_ints.is_empty());
     let (config, diags) = cli::load_config(&cli);
     for d in &diags {
         eprintln!("dosy: warning: {d}");

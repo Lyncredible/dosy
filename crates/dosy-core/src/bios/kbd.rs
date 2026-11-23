@@ -429,7 +429,11 @@ pub fn int16<B: Bus>(cpu: &mut Cpu, bus: &mut B) -> HleResult {
         }
         0x03 => {} // typematic rate: ignored
         0x09 => cpu.regs.set_al(0x00),
-        _ => log::debug!("INT 16h AH={ah:02X}: unsupported"),
+        _ => {
+            crate::debug::warn_once("int16", ah as u64, || {
+                format!("INT 16h AH={ah:02X}: unsupported")
+            });
+        }
     }
     HleResult::Done
 }
