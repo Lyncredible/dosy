@@ -1,6 +1,5 @@
 //! winit event loop on the main thread: window, renderer, and the bridge to
-//! the emulation thread. Keys go to the guest as set-1 scancodes;
-//! Ctrl+Alt+F12 cycles test patterns (until VGA output is shown).
+//! the emulation thread. Keys go to the guest as set-1 scancodes.
 
 use std::sync::Arc;
 
@@ -189,7 +188,8 @@ impl ApplicationHandler<EmuEvent> for App {
             } => match self.keyboard.key(code, state == ElementState::Pressed) {
                 Ok(bytes) if !bytes.is_empty() => self.emu.send(HostEvent::Key(bytes)),
                 Ok(_) => {}
-                Err(Shortcut::NextPattern) => self.emu.send(HostEvent::NextPattern),
+                // The test patterns are gone; shortcuts get actions in 042.
+                Err(Shortcut::NextPattern) => {}
             },
             WindowEvent::Focused(false) => {
                 let bytes = self.keyboard.release_all();

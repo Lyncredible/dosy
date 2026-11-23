@@ -2,11 +2,13 @@
 
 use std::path::{Path, PathBuf};
 
-use dosy_config::{Config, Diagnostic, Scale};
+use dosy_config::{Config, CpuKind, Diagnostic, Scale};
+use dosy_core::cpu::CpuModel;
+use dosy_core::vfs::{Drive, MountOptions, open_mount};
 use dosy_core::video::Rgb8;
 use dosy_render::{RenderConfig, ScaleMode};
 
-use crate::emu::{EmuSetup, MountSource};
+use crate::emu::EmuSetup;
 
 pub const USAGE: &str = "\
 usage: dosy [options] [PATH]
@@ -84,21 +86,13 @@ pub fn load_config(cli: &Cli) -> (Config, Vec<Diagnostic>) {
     (cfg, diags)
 }
 
-/// Classifies a host path for mounting.
-pub fn mount_source(p: &Path) -> Result<MountSource, String> {
-    let meta = std::fs::metadata(p).map_err(|e| format!("{}: {e}", p.display()))?;
-    let is_zip = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"));
-    Ok(if meta.is_dir() {
-        MountSource::Dir(p.to_owned())
-    } else if is_zip {
-        MountSource::Zip(p.to_owned())
-    } else {
-        MountSource::File(p.to_owned())
-    })
+/// Opens a host directory, file or (once 028 lands) zip as a DOS drive.
+pub fn open_drive(p: &Path) -> Result<Box<dyn Drive>, String> {
+    open_mount(p, &MountOptions::default()).map_err(|e| format!("{}: {e}", p.display()))
 }
 
-/// Emulation startup settings: config `mount`/`autoexec`, then `PATH` as
-/// C: (replacing a configured C:) followed by `C:` and the `-c` commands.
+/// Emulation startup settings: config `cpu`/`mount`/`autoexec`, then `PATH`
+/// as C: (replacing a configured C:) followed by `C:` and the `-c` commands.
 /// Unusable config mounts are skipped with a warning (config never aborts);
 /// an unusable `PATH` is an error.
 pub fn emu_setup(
@@ -109,20 +103,27 @@ pub fn emu_setup(
     let mut mounts = Vec::new();
     let mut warnings = Vec::new();
     for m in &cfg.mount {
-        match mount_source(&m.path) {
-            Ok(src) => mounts.push((m.letter, src)),
+        if cli.path.is_some() && m.letter == 'C' {
+            continue;
+        }
+        match open_drive(&m.path) {
+            Ok(d) => mounts.push((m.letter, d)),
             Err(e) => warnings.push(format!("mount {}: skipped: {e}", m.letter)),
         }
     }
     let mut autoexec = cfg.autoexec.clone();
     if let Some(p) = &cli.path {
-        mounts.retain(|(l, _)| *l != 'C');
-        mounts.push(('C', mount_source(p)?));
+        mounts.push(('C', open_drive(p)?));
         autoexec.push("C:".into());
     }
     autoexec.extend(cli.commands.iter().cloned());
     let setup = EmuSetup {
         cycles_per_ms: cfg.cycles.per_ms(),
+        cpu_model: match cfg.cpu {
+            CpuKind::I8086 => CpuModel::I8086,
+            CpuKind::I186 => CpuModel::I186,
+            CpuKind::I386 => CpuModel::I386,
+        },
         rtc_unix_secs,
         mounts,
         autoexec,
@@ -250,13 +251,9 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(s.cycles_per_ms, None);
         assert_eq!(s.rtc_unix_secs, 42);
-        assert_eq!(
-            s.mounts,
-            [
-                ('D', MountSource::Dir(dir.clone())),
-                ('C', MountSource::Zip(zip.clone()))
-            ]
-        );
+        assert_eq!(s.cpu_model, CpuModel::I386);
+        let letters: Vec<char> = s.mounts.iter().map(|(l, _)| *l).collect();
+        assert_eq!(letters, ['D', 'C'], "PATH replaces the configured C:");
         assert_eq!(s.autoexec, ["echo hi", "C:", "run"]);
 
         let missing = parse([dir.join("nope").display().to_string()]).unwrap();
@@ -268,10 +265,10 @@ mod tests {
         let (s, warnings) = emu_setup(&bad, &Cli::default(), 0).unwrap();
         assert!(s.mounts.is_empty());
         assert_eq!(warnings.len(), 1);
-        assert_eq!(
-            mount_source(&dir.join("disk.ZIP")).unwrap(),
-            MountSource::Zip(zip.clone())
-        );
+        let mut c286 = Config::default();
+        c286.set("cpu", "186").unwrap();
+        let (s, _) = emu_setup(&c286, &Cli::default(), 0).unwrap();
+        assert_eq!(s.cpu_model, CpuModel::I186);
         std::fs::remove_dir_all(&dir).ok();
     }
 

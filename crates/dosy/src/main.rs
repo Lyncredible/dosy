@@ -7,7 +7,6 @@ mod emu;
 mod input;
 mod mailbox;
 mod pacing;
-mod pattern;
 
 use std::process::ExitCode;
 

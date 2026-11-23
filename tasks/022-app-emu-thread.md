@@ -1,6 +1,6 @@
 # 022 — Emulation thread, pacing and CLI
 
-- **Status:** in-progress
+- **Status:** done
 - **Milestone:** M1
 - **Depends on:** 012, 013
 - **Owner:** worker-2
@@ -19,7 +19,7 @@ Run `Machine` on its own thread at real-time speed and show its frames.
 - Clean shutdown on window close; fault → message in title + pause.
 
 ## Acceptance criteria
-- [ ] Boots to the shell prompt in a window (once 021 has landed; before
+- [x] Boots to the shell prompt in a window (once 021 has landed; before
       that, shows the BIOS text screen).
 - [x] Unit tests for the pacing calculator and mailbox.
 
@@ -30,8 +30,9 @@ Done (PR 1): emu thread (`emu.rs`), `HostEvent` channel, latest-wins
 in std), `dosy [PATH] -c cmd` → `EmuSetup { mounts, autoexec }` merged with
 config, clean shutdown, stop + title message on fault/halt.
 
-Remaining (blocked):
-- Mount `EmuSetup.mounts` once host/zip drives exist (011, 028).
-- Run `EmuSetup.autoexec` in the shell (021).
-- Publish `Machine` frames at vsync instead of test patterns (010); then
-  rate-limit presents in `cycles = max`.
+Done (PR 2): `Machine::frame()` published when its `seq` changes (vsync),
+at most every 14 ms in `cycles = max`; test patterns removed. Mounts open
+in the main thread via `open_mount` (a bad PATH exits 2, bad config mounts
+warn); `.zip` works once 028 extends `open_mount`. `cpu` → `cpu_model`.
+Autoexec/`-c` lines run in the 021 shell via `Machine::start_shell`;
+shell `EXIT` pauses with a title message.
