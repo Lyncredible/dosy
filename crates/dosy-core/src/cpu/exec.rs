@@ -6,7 +6,7 @@
 
 use super::alu;
 use super::flags::{self, AF, CF, DF, IF, OF, PF, SF, ZF};
-use super::regs::{AX, BX, CX, DX, Seg};
+use super::regs::{AX, BX, DX, Seg};
 use super::{Cpu, CpuFault, CpuModel, Flags, Prefixes, Rep, Rm, Step};
 use crate::bus::Bus;
 use crate::hle::HleId;
@@ -49,8 +49,10 @@ impl Cpu {
                 0x2E => pfx.seg = Some(Seg::Cs),
                 0x36 => pfx.seg = Some(Seg::Ss),
                 0x3E => pfx.seg = Some(Seg::Ds),
-                0x64 => pfx.seg = Some(Seg::Fs),
-                0x65 => pfx.seg = Some(Seg::Gs),
+                0x64 if self.model == CpuModel::I386 => pfx.seg = Some(Seg::Fs),
+                0x65 if self.model == CpuModel::I386 => pfx.seg = Some(Seg::Gs),
+                0x66 if self.model == CpuModel::I386 => pfx.opsize = true,
+                0x67 if self.model == CpuModel::I386 => pfx.addr32 = true,
                 0xF0 => pfx.lock = true,
                 // Pre-386, F1 decodes as another LOCK.
                 0xF1 if self.model < CpuModel::I386 => pfx.lock = true,
@@ -93,6 +95,11 @@ impl Cpu {
 
     /// Decoded opcode `op`; `None` = invalid / not yet implemented.
     fn exec<B: Bus>(&mut self, bus: &mut B, op: u8, pfx: &Prefixes) -> Option<Step> {
+        if pfx.opsize {
+            if let Some(r) = self.exec32(bus, op, pfx) {
+                return r;
+            }
+        }
         match op {
             // --- MOV ---
             0x88 => {
@@ -127,7 +134,11 @@ impl Cpu {
                 self.set_sreg(s, v);
             }
             0xA0..=0xA3 => {
-                let off = self.fetch16(bus);
+                let off = if pfx.addr32 {
+                    self.fetch32(bus) as u16
+                } else {
+                    self.fetch16(bus)
+                };
                 let seg = pfx.seg.unwrap_or(Seg::Ds);
                 match op {
                     0xA0 => {
@@ -315,11 +326,12 @@ impl Cpu {
             }
             0xE0..=0xE3 => {
                 let d = self.fetch_rel8(bus);
+                // 67h: ECX is the counter.
                 let cx = if op == 0xE3 {
-                    self.regs.get16(CX)
+                    self.count_reg(pfx)
                 } else {
-                    let cx = self.regs.get16(CX).wrapping_sub(1);
-                    self.regs.set16(CX, cx);
+                    let cx = self.count_reg(pfx).wrapping_sub(1);
+                    self.set_count_reg(pfx, cx);
                     cx
                 };
                 let zf = self.flags & ZF != 0;

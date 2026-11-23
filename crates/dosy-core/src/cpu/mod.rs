@@ -7,10 +7,14 @@ mod exec;
 mod ext;
 pub mod flags;
 mod ops;
+mod ops32;
+mod ops_0f;
 pub mod regs;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_386;
 #[cfg(test)]
 mod tests_8086;
 #[cfg(test)]
@@ -202,6 +206,28 @@ impl Cpu {
         }
     }
 
+    pub fn read_mem32<B: Bus>(&mut self, bus: &mut B, seg: Seg, off: u16) -> u32 {
+        let lo = self.read_mem16(bus, seg, off) as u32;
+        let hi = self.read_mem16(bus, seg, off.wrapping_add(2)) as u32;
+        hi << 16 | lo
+    }
+    pub fn write_mem32<B: Bus>(&mut self, bus: &mut B, seg: Seg, off: u16, v: u32) {
+        self.write_mem16(bus, seg, off, v as u16);
+        self.write_mem16(bus, seg, off.wrapping_add(2), (v >> 16) as u16);
+    }
+    pub fn read_rm32<B: Bus>(&mut self, bus: &mut B, rm: Rm) -> u32 {
+        match rm {
+            Rm::Reg(i) => self.regs.get32(i),
+            Rm::Mem { seg, off } => self.read_mem32(bus, seg, off),
+        }
+    }
+    pub fn write_rm32<B: Bus>(&mut self, bus: &mut B, rm: Rm, v: u32) {
+        match rm {
+            Rm::Reg(i) => self.regs.set32(i, v),
+            Rm::Mem { seg, off } => self.write_mem32(bus, seg, off, v),
+        }
+    }
+
     // --- Stack (SS:SP, 16-bit, wraps at 0). ---
 
     pub fn push16<B: Bus>(&mut self, bus: &mut B, v: u16) {
@@ -213,6 +239,17 @@ impl Cpu {
         let sp = self.regs.sp();
         let v = self.read_mem16(bus, Seg::Ss, sp);
         self.regs.set_sp(sp.wrapping_add(2));
+        v
+    }
+    pub fn push32<B: Bus>(&mut self, bus: &mut B, v: u32) {
+        let sp = self.regs.sp().wrapping_sub(4);
+        self.regs.set_sp(sp);
+        self.write_mem32(bus, Seg::Ss, sp, v);
+    }
+    pub fn pop32<B: Bus>(&mut self, bus: &mut B) -> u32 {
+        let sp = self.regs.sp();
+        let v = self.read_mem32(bus, Seg::Ss, sp);
+        self.regs.set_sp(sp.wrapping_add(4));
         v
     }
 }

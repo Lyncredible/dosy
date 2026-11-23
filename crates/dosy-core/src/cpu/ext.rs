@@ -96,6 +96,10 @@ impl Cpu {
                 let v = self.pop16(bus);
                 self.regs.set16(BP, v);
             }
+            // 386 prefixes on older models: #UD on the 186.
+            0x64..=0x67 if self.model == CpuModel::I186 => {
+                return Some(self.raise_fault(bus, VEC_UD));
+            }
             // F1: INT1 / ICEBP on the 386 (a LOCK alias before, see `step`).
             0xF1 => self.interrupt(bus, VEC_INT1),
             _ => return None,
@@ -160,7 +164,7 @@ impl Cpu {
                 }
                 Some(Step::Ok)
             }
-            _ => None,
+            _ => self.exec_0f_386(bus, op2, pfx),
         }
     }
 
