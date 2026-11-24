@@ -45,7 +45,7 @@ all its dependencies are `done`.
 |----|-------|--------|------------|-------|------|
 | 025 | 80186 and 386 real-mode instructions | done | 007 | worker-2 | [025](tasks/025-cpu-386-real.md) |
 | 026 | VGA mode 13h and palette | done | 010, 016 | worker-1 | [026](tasks/026-vga-mode13h.md) |
-| 027 | EGA/VGA planar modes, mode X, CGA graphics | todo | 026 | — | [027](tasks/027-vga-planar.md) |
+| 027 | EGA/VGA planar modes, mode X, CGA graphics | in-progress | 026 | worker-2 | [027](tasks/027-vga-planar.md) |
 | 028 | Zip drives and writable overlay | done | 011 | worker-4 | [028](tasks/028-vfs-zip-overlay.md) |
 | 029 | Batch files | done | 021 | worker-3 | [029](tasks/029-shell-batch.md) |
 | 030 | Remaining DOS services (FCB, IOCTL, INT 2Fh) | todo | 019 | — | [030](tasks/030-dos-misc.md) |

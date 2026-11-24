@@ -1,8 +1,9 @@
 //! VGA: registers, DAC, 256 KiB VRAM (4 planes), the `A0000–BFFFF` window,
 //! display timing (input status 1) and frame production at vretrace.
 //!
-//! Renders text modes and 256-colour modes (13h). Planar 16-colour and
-//! CGA modes, latches and write modes 1–3 arrive in 027.
+//! Renders text modes, 256-colour modes (13h) and 16-colour planar modes
+//! (12h). The planar memory path has latches, write modes 0–3 and read
+//! modes 0/1. CGA modes are still to come (027).
 
 pub mod font;
 mod gfx;
@@ -66,6 +67,8 @@ pub struct Vga {
     dac_comp: u8,
     dac_comp_buf: [u8; 3],
     dac_reading: bool,
+    /// One byte per plane, loaded by every planar read.
+    latch: [u8; 4],
     frames: u64,
     frame: Option<VideoFrame>,
 }
@@ -104,6 +107,7 @@ impl Vga {
             dac_comp: 0,
             dac_comp_buf: [0; 3],
             dac_reading: false,
+            latch: [0; 4],
             frames: 0,
             frame: None,
         };
@@ -230,16 +234,60 @@ impl Vga {
         self.seq[4] & 4 == 0
     }
 
-    fn mem_read(&self, off: usize) -> u8 {
+    fn mem_read(&mut self, off: usize) -> u8 {
         if self.chain4() {
             self.vram[(off & 3) * PLANE_SIZE + (off & !3) % PLANE_SIZE]
         } else if self.odd_even() {
             let plane = (off & 1) | (self.gc[4] as usize & 2);
             self.vram[plane * PLANE_SIZE + (off & !1) % PLANE_SIZE]
         } else {
-            let plane = self.gc[4] as usize & 3;
-            self.vram[plane * PLANE_SIZE + off % PLANE_SIZE]
+            let at = off % PLANE_SIZE;
+            for p in 0..4 {
+                self.latch[p] = self.vram[p * PLANE_SIZE + at];
+            }
+            if self.gc[5] & 8 == 0 {
+                self.latch[self.gc[4] as usize & 3]
+            } else {
+                // Read mode 1: 1 where every plane enabled in colour don't
+                // care (GC 07h) matches colour compare (GC 02h).
+                let mut eq = 0xFF;
+                for p in 0..4 {
+                    if self.gc[7] & (1 << p) != 0 {
+                        let want = if self.gc[2] & (1 << p) != 0 { 0xFF } else { 0 };
+                        eq &= !(self.latch[p] ^ want);
+                    }
+                }
+                eq
+            }
         }
+    }
+
+    /// Planar write pipeline for plane `p`: write modes 0–3 with
+    /// set/reset, rotate, logical function and bit mask against the latch.
+    fn planar_value(&self, p: usize, val: u8) -> u8 {
+        let rotated = val.rotate_right(self.gc[3] as u32 & 7);
+        let sr = if self.gc[0] & (1 << p) != 0 { 0xFF } else { 0 };
+        let (data, mask) = match self.gc[5] & 3 {
+            0 => {
+                let d = if self.gc[1] & (1 << p) != 0 {
+                    sr
+                } else {
+                    rotated
+                };
+                (d, self.gc[8])
+            }
+            1 => return self.latch[p],
+            2 => (if val & (1 << p) != 0 { 0xFF } else { 0 }, self.gc[8]),
+            _ => (sr, rotated & self.gc[8]),
+        };
+        let latch = self.latch[p];
+        let data = match (self.gc[3] >> 3) & 3 {
+            0 => data,
+            1 => data & latch,
+            2 => data | latch,
+            _ => data ^ latch,
+        };
+        (data & mask) | (latch & !mask)
     }
 
     fn mem_write(&mut self, off: usize, val: u8) {
@@ -259,7 +307,8 @@ impl Vga {
         } else {
             for p in 0..4 {
                 if mask & (1 << p) != 0 {
-                    self.vram[p * PLANE_SIZE + off % PLANE_SIZE] = val;
+                    let v = self.planar_value(p, val);
+                    self.vram[p * PLANE_SIZE + off % PLANE_SIZE] = v;
                 }
             }
         }
@@ -297,8 +346,10 @@ impl Vga {
             text::render(self, self.frames)
         } else if self.ac[0x10] & 0x40 != 0 {
             gfx::render256(self)
+        } else if self.gc[5] & 0x20 == 0 {
+            gfx::render16(self)
         } else {
-            // Planar 16-colour / CGA graphics: 027.
+            // CGA interleaved graphics: 027.
             VideoFrame::blank(640, 400)
         };
         f.palette = self.palette();
@@ -314,7 +365,10 @@ pub fn bank_offset(bank: usize) -> usize {
 
 impl Mmio for Vga {
     fn read8(&mut self, addr: Addr) -> Option<u8> {
-        Some(self.window(addr).map_or(0xFF, |off| self.mem_read(off)))
+        Some(match self.window(addr) {
+            Some(off) => self.mem_read(off),
+            None => 0xFF,
+        })
     }
     fn write8(&mut self, addr: Addr, val: u8) -> bool {
         if let Some(off) = self.window(addr) {

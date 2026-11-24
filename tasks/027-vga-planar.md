@@ -1,9 +1,9 @@
 # 027 — EGA/VGA planar modes, mode X, CGA graphics
 
-- **Status:** todo
+- **Status:** in-progress
 - **Milestone:** M2
 - **Depends on:** 026
-- **Owner:** —
+- **Owner:** worker-2
 
 ## Goal
 The remaining graphics modes games use.
@@ -20,3 +20,12 @@ The remaining graphics modes games use.
 ## Acceptance criteria
 - [ ] Tests: each write mode against a reference, mode X pixel addressing,
       CGA interleave, golden hashes per mode.
+
+## Progress
+Part 1: planar memory path (latches, write modes 0–3 with set/reset,
+rotate, logical function, bit mask; read modes 0/1), 16-colour planar
+renderer, INT 10h mode 12h (table, AH=0Ch/0Dh, glyphs, scroll).
+
+Remaining: modes 0Dh/0Eh/10h tables (and their EGA palettes/char heights),
+CGA modes 04h–06h (interleave, 3D9h), mode X helpers/tests (320x240),
+golden hashes per mode.

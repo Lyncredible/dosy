@@ -137,12 +137,36 @@ const MODE_13: ModeParams = ModeParams {
     dac: DacInit::Vga256,
 };
 
+/// 640x480 16-colour planar (VGA mode 12h).
+const MODE_12: ModeParams = ModeParams {
+    text: false,
+    cols: 80,
+    rows: 30,
+    char_height: 16,
+    page_size: 0xA000,
+    mode_ctrl: 0x09,
+    crtc_base: 0x3D4,
+    misc: 0xE3,
+    seq: [0x01, 0x0F, 0x00, 0x06],
+    crtc: [
+        0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0x0B, 0x3E, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0xEA, 0x8C, 0xDF, 0x28, 0x00, 0xE7, 0x04, 0xE3, 0xFF,
+    ],
+    ac: [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E,
+        0x3F, 0x01, 0x00, 0x0F, 0x00,
+    ],
+    gc: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0F, 0xFF],
+    dac: DacInit::Ega,
+};
+
 /// Register set for a BIOS mode; `None` = unsupported.
 pub fn mode_params(mode: u8) -> Option<&'static ModeParams> {
     Some(match mode {
         0x00 | 0x01 => &MODE_40,
         0x02 | 0x03 => &MODE_80,
         0x07 => &MODE_7,
+        0x12 => &MODE_12,
         0x13 => &MODE_13,
         _ => return None,
     })
@@ -314,9 +338,9 @@ pub fn install<B: Bus>(bus: &mut B) {
     bus.load_rom(rom(ROM_FONT_8X16), &font::FONT_8X16);
     bus.load_rom(rom(ROM_FONT_8X8), &font::FONT_8X8);
     bus.load_rom(rom(VIDEO_PARAMS), &VIDEO_PARAM_TABLE);
-    // 1Bh functionality: modes 00–07 and 13h, 200/350/400 scan lines.
+    // 1Bh functionality: modes 00–07, 12h, 13h; 200/350/400 scan lines.
     let mut func = [0u8; 16];
-    func[..4].copy_from_slice(&[0xFF, 0x00, 0x08, 0x00]); // modes 0-7, 13h
+    func[..4].copy_from_slice(&[0xFF, 0x00, 0x0C, 0x00]); // modes 0-7, 12h, 13h
     func[7] = 0x07;
     bus.load_rom(rom(FUNC_TABLE), &func);
     set_vector(bus, 0x1D, ROM_SEGMENT, VIDEO_PARAMS);
@@ -520,8 +544,8 @@ pub fn scroll<B: Bus>(bus: &mut B, up: bool, n: u8, attr: u8, tl: (u16, u16), br
     if !is_text(bus) {
         if is_mode13(bus) {
             scroll13(bus, up, n, attr, tl, br);
-        } else {
-            log::debug!("INT 10h scroll in planar graphics: not implemented (027)");
+        } else if is_planar(bus) {
+            scroll_planar(bus, up, n, attr, tl, br);
         }
         return;
     }
@@ -573,6 +597,8 @@ pub fn teletype<B: Bus>(bus: &mut B, ch: u8, page: u8, attr: u8) {
                 bus.write8(a, ch);
             } else if is_mode13(bus) {
                 draw_glyph13(bus, col, row, ch, attr);
+            } else if is_planar(bus) {
+                draw_glyph_planar(bus, col, row, ch, attr);
             }
             col += 1;
             if col >= cols {
@@ -602,19 +628,20 @@ pub fn teletype<B: Bus>(bus: &mut B, ch: u8, page: u8, attr: u8) {
 fn write_chars<B: Bus>(bus: &mut B, ch: u8, attr: Option<u8>, page: u8, count: u16) {
     let (col, row) = cursor(bus, page);
     if !is_text(bus) {
-        if is_mode13(bus) {
-            // Graphics: AH=09h and 0Ah both draw in colour BL.
-            let color = attr.unwrap_or(0x0F); // int10 always passes BL
-            let (cols, rows) = (cols(bus), rows(bus));
-            for i in 0..count {
-                let pos = row * cols + col + i;
-                if pos >= cols * rows {
-                    break;
-                }
-                draw_glyph13(bus, pos % cols, pos / cols, ch, color);
+        // Graphics: AH=09h and 0Ah both draw in colour BL.
+        let color = attr.unwrap_or(0x0F); // int10 always passes BL
+        let (cols, rows) = (cols(bus), rows(bus));
+        for i in 0..count {
+            let pos = row * cols + col + i;
+            if pos >= cols * rows {
+                break;
             }
-        } else {
-            log::debug!("INT 10h write char in planar graphics: not implemented (027)");
+            let (c, r) = (pos % cols, pos / cols);
+            if is_mode13(bus) {
+                draw_glyph13(bus, c, r, ch, color);
+            } else if is_planar(bus) {
+                draw_glyph_planar(bus, c, r, ch, color);
+            }
         }
         return;
     }
@@ -703,6 +730,118 @@ fn scroll13<B: Bus>(bus: &mut B, up: bool, n: u8, color: u8, tl: (u16, u16), br:
     }
 }
 
+// --- 16-colour planar graphics helpers (mode 12h) ---
+
+fn is_planar<B: Bus>(bus: &mut B) -> bool {
+    bda::read8(bus, bda::VIDEO_MODE) == 0x12
+}
+
+/// Bytes per scan line: 8 pixels per byte.
+fn planar_pitch<B: Bus>(bus: &mut B) -> Addr {
+    cols(bus) as Addr
+}
+
+fn planar_height<B: Bus>(bus: &mut B) -> u16 {
+    rows(bus) * bda::read8(bus, bda::CHAR_HEIGHT) as u16
+}
+
+/// Write mode 2 at `addr` under `mask`; colour bit 7 XORs (as AH=0Ch).
+fn planar_put<B: Bus>(bus: &mut B, addr: Addr, mask: u8, color: u8) {
+    gc_write(bus, 5, 0x02);
+    gc_write(bus, 8, mask);
+    gc_write(bus, 3, if color & 0x80 != 0 { 0x18 } else { 0x00 });
+    bus.read8(addr); // load the latches
+    bus.write8(addr, color & 0x0F);
+    gc_write(bus, 3, 0x00);
+    gc_write(bus, 8, 0xFF);
+    gc_write(bus, 5, 0x00);
+}
+
+/// AH=0Ch in planar modes.
+pub fn put_pixel_planar<B: Bus>(bus: &mut B, x: u16, y: u16, color: u8) {
+    let pitch = planar_pitch(bus);
+    if (x as Addr) >= pitch * 8 || y >= planar_height(bus) {
+        return;
+    }
+    let addr = 0xA_0000 + y as Addr * pitch + (x / 8) as Addr;
+    planar_put(bus, addr, 0x80 >> (x & 7), color);
+}
+
+/// AH=0Dh in planar modes: the 4 plane bits via read map select.
+pub fn get_pixel_planar<B: Bus>(bus: &mut B, x: u16, y: u16) -> u8 {
+    let pitch = planar_pitch(bus);
+    if (x as Addr) >= pitch * 8 || y >= planar_height(bus) {
+        return 0;
+    }
+    let addr = 0xA_0000 + y as Addr * pitch + (x / 8) as Addr;
+    let mut c = 0;
+    for p in 0..4 {
+        gc_write(bus, 4, p);
+        c |= ((bus.read8(addr) >> (7 - (x & 7))) & 1) << p;
+    }
+    gc_write(bus, 4, 0);
+    c
+}
+
+/// Glyph from the INT 43h font at text cell (`col`, `row`): foreground
+/// `fg` on 0, or XORed onto the screen when bit 7 of `fg` is set.
+fn draw_glyph_planar<B: Bus>(bus: &mut B, col: u16, row: u16, ch: u8, fg: u8) {
+    let h = bda::read8(bus, bda::CHAR_HEIGHT) as Addr;
+    let font = linear(bus.read16(0x43 * 4 + 2), bus.read16(0x43 * 4));
+    let pitch = planar_pitch(bus);
+    let xor = fg & 0x80 != 0;
+    for gy in 0..h {
+        let bits = bus.read8(font + ch as Addr * h + gy);
+        let addr = 0xA_0000 + (row as Addr * h + gy) * pitch + col as Addr;
+        if xor {
+            planar_put(bus, addr, bits, fg);
+        } else {
+            planar_put(bus, addr, 0xFF, 0);
+            planar_put(bus, addr, bits, fg);
+        }
+    }
+}
+
+/// AH=06h/07h in planar modes: text-cell window, CHAR_HEIGHT lines per
+/// row, copied with write mode 1 (latches) and filled with `color`.
+fn scroll_planar<B: Bus>(bus: &mut B, up: bool, n: u8, color: u8, tl: (u16, u16), br: (u16, u16)) {
+    let ch = bda::read8(bus, bda::CHAR_HEIGHT) as u16;
+    let (left, top) = tl;
+    let right = br.0.min(cols(bus) - 1);
+    let bottom = br.1.min(rows(bus) - 1);
+    if left > right || top > bottom {
+        return;
+    }
+    let height = (bottom - top + 1) * ch;
+    let n = if n == 0 || n as u16 * ch > height {
+        height
+    } else {
+        n as u16 * ch
+    };
+    let pitch = planar_pitch(bus);
+    let line = |y: u16| 0xA_0000 + y as Addr * pitch;
+    for i in 0..height {
+        let y = if up {
+            top * ch + i
+        } else {
+            bottom * ch + ch - 1 - i
+        };
+        let from = (i + n < height).then(|| if up { y + n } else { y - n });
+        for x in left..=right {
+            let dst = line(y) + x as Addr;
+            match from {
+                Some(sy) => {
+                    gc_write(bus, 5, 0x01);
+                    bus.read8(line(sy) + x as Addr);
+                    bus.write8(dst, 0);
+                    gc_write(bus, 5, 0x00);
+                }
+                None => planar_put(bus, dst, 0xFF, color & 0x0F),
+            }
+        }
+    }
+}
+
 // --- INT 10h ---
 
 pub fn int10<B: Bus>(cpu: &mut Cpu, bus: &mut B) {
@@ -737,11 +876,15 @@ pub fn int10<B: Bus>(cpu: &mut Cpu, bus: &mut B) {
         0x0C => {
             if is_mode13(bus) {
                 put_pixel13(bus, r.cx(), r.dx(), al);
+            } else if is_planar(bus) {
+                put_pixel_planar(bus, r.cx(), r.dx(), al);
             }
         }
         0x0D => {
             let v = if is_mode13(bus) {
                 get_pixel13(bus, r.cx(), r.dx())
+            } else if is_planar(bus) {
+                get_pixel_planar(bus, r.cx(), r.dx())
             } else {
                 0
             };
@@ -936,5 +1079,7 @@ fn state_info<B: Bus>(cpu: &mut Cpu, bus: &mut B) {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests12;
 #[cfg(test)]
 mod tests13;
