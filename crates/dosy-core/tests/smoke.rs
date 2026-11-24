@@ -20,8 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use dosy_core::bus::{Bus, linear};
-use dosy_core::cpu::Seg;
+use dosy_core::debug::Tracer;
 use dosy_core::machine::{Machine, MachineConfig, RunExit};
 use dosy_core::vfs::{self, MountOptions, Overlay};
 use dosy_core::video::VideoFrame;
@@ -124,31 +123,9 @@ fn non_blank(f: &VideoFrame) -> bool {
     }
 }
 
-/// CPU state and the bytes at CS:IP, for failure reports.
-fn dump(m: &mut Machine) -> String {
-    let c = &m.cpu;
-    let (cs, ip) = (c.sregs.get(Seg::Cs), c.ip as u16);
-    let r = &c.regs;
-    let mut s = format!(
-        "CS:IP={cs:04X}:{ip:04X} AX={:04X} BX={:04X} CX={:04X} DX={:04X} SI={:04X} DI={:04X} \
-         BP={:04X} SP={:04X} DS={:04X} ES={:04X} SS={:04X} FLAGS={:04X}\nbytes:",
-        r.ax(),
-        r.bx(),
-        r.cx(),
-        r.dx(),
-        r.si(),
-        r.di(),
-        r.bp(),
-        r.sp(),
-        c.sregs.get(Seg::Ds),
-        c.sregs.get(Seg::Es),
-        c.sregs.get(Seg::Ss),
-        c.flags as u16,
-    );
-    for i in 0..16 {
-        s += &format!(" {:02X}", m.hw.read8(linear(cs, ip.wrapping_add(i))));
-    }
-    s
+/// The 024 fault report: registers, disassembly at CS:IP, trace history.
+fn dump(m: &mut Machine, exit: RunExit) -> String {
+    m.fault_report(exit)
 }
 
 #[test]
@@ -173,6 +150,7 @@ fn smoke() {
     };
     let drive = vfs::open_mount(Path::new(&zip), &opts).expect("mount DOSY_SMOKE_ZIP");
     let mut m = Machine::new(MachineConfig::default());
+    m.tracer = Some(Box::new(Tracer::new(64)));
     m.mount('c', drive);
     let mut lines = vec!["C:".to_string()];
     lines.extend(cmd);
@@ -198,7 +176,7 @@ fn smoke() {
                 break;
             }
             e => {
-                failure = Some(format!("{e:?}"));
+                failure = Some(e);
                 break;
             }
         }
@@ -243,7 +221,7 @@ fn smoke() {
         eprintln!("  {w}");
     }
     if let Some(f) = failure {
-        panic!("smoke: stopped with {f}\n{}", dump(&mut m));
+        panic!("smoke: stopped with {f:?}\n{}", dump(&mut m, f));
     }
     let opcode = warnings
         .iter()
@@ -252,17 +230,17 @@ fn smoke() {
         opcode.is_none(),
         "smoke: {}\n{}",
         opcode.unwrap(),
-        dump(&mut m)
+        dump(&mut m, RunExit::Budget)
     );
     assert!(
         non_blank_frames > 0,
         "smoke: no non-blank frame\n{}",
-        dump(&mut m)
+        dump(&mut m, RunExit::Budget)
     );
     assert!(
         allow_text || gfx_frames > 0,
         "smoke: no graphics-mode frame (DOSY_SMOKE_ALLOW_TEXT=1 to accept)\n{}",
-        dump(&mut m)
+        dump(&mut m, RunExit::Budget)
     );
 }
 

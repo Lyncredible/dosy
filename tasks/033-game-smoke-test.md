@@ -24,8 +24,8 @@ A repeatable headless check that a real zipped DOS game boots and draws.
   `DOSY_SMOKE_ALLOW_TEXT=1` accepts text-only output.
 - Warnings are captured through `log`; any mentioning an opcode fails the
   test, the rest are listed. Failures print a CPU dump (CS:IP, registers,
-  code bytes) until 024's trace dump can be hooked in.
+  code bytes, trace history) via 024's `Machine::fault_report`.
 
 ## Acceptance criteria
 - [x] Skips cleanly in CI; runs locally against a private zip.
-- [ ] Failures print the trace dump from 024.
+- [x] Failures print the trace dump from 024.
