@@ -167,3 +167,126 @@ fn mount_host_directory() {
     assert!(s.contains(&"Drive D: unmounted".to_string()), "{s:#?}");
     assert!(s.contains(&"Z:\\>".to_string()), "back on Z: after unmount");
 }
+
+/// COM that bumps the byte at 0000:04F0 and exits with `code`.
+fn counter_com(code: u8) -> Vec<u8> {
+    vec![
+        0x31, 0xC0, // xor ax, ax
+        0x8E, 0xD8, // mov ds, ax
+        0xFE, 0x06, 0xF0, 0x04, // inc byte [04F0h]
+        0xB8, code, 0x4C, // mov ax, 4C00h + code
+        0xCD, 0x21, // int 21h
+    ]
+}
+
+fn count(m: &mut Machine) -> u8 {
+    m.hw.read8(0x4F0)
+}
+
+#[test]
+fn launcher_batch_runs_programs_in_sequence() {
+    let mut c = MemDrive::new();
+    c.add_file("\\A.COM", &counter_com(0));
+    c.add_file("\\B.COM", &counter_com(0));
+    c.add_file(
+        "\\GAME.BAT",
+        b"@echo off\r\ncls\r\na\r\nb\r\ncls\r\necho\t\tThanks for playing\r\necho\tBye\r\n",
+    );
+    let mut m = boot(Some(c), &[]);
+    type_line(&mut m, "game\r");
+    assert_eq!(count(&mut m), 2, "both programs ran");
+    let s = screen(&mut m);
+    // The first separator after ECHO is eaten, as in DOS; the next tab
+    // expands to column 8.
+    assert_eq!(s[0], "        Thanks for playing", "{s:#?}");
+    assert_eq!(s[1], "Bye", "{s:#?}");
+    assert!(s.contains(&"C:\\>".to_string()), "{s:#?}");
+    assert!(
+        !s.iter().any(|l| l.contains(">a") || l.contains(">b")),
+        "echo off"
+    );
+    assert!(m.dos.processes.is_empty());
+}
+
+#[test]
+fn goto_if_for_call_shift_and_errorlevel() {
+    let mut c = MemDrive::new();
+    c.add_file("\\E3.COM", &counter_com(3));
+    c.add_file(
+        "\\T.BAT",
+        b"@echo off\r\n\
+          :loop\r\n\
+          echo arg %1\r\n\
+          shift\r\n\
+          if not \"%1\"==\"\" goto loop\r\n\
+          e3\r\n\
+          if errorlevel 3 echo level3\r\n\
+          if errorlevel 4 echo level4\r\n\
+          if exist t.bat echo found\r\n\
+          if not exist nope.txt echo missing\r\n\
+          if exist *.com echo coms\r\n\
+          for %%f in (x y) do echo item %%f\r\n\
+          for %%f in (*.com) do echo has %%f\r\n\
+          set who=world\r\n\
+          echo hello %who% 100%%\r\n\
+          call sub one\r\n\
+          echo back\r\n\
+          goto end\r\n\
+          echo skipped\r\n\
+          :end\r\n",
+    );
+    c.add_file("\\SUB.BAT", b"echo sub %1\r\n");
+    let mut m = boot(Some(c), &[]);
+    type_line(&mut m, "t p q\r");
+    let s = screen(&mut m);
+    let want = [
+        "arg p",
+        "arg q",
+        "level3",
+        "found",
+        "missing",
+        "coms",
+        "item x",
+        "item y",
+        "has E3.COM",
+        "hello world 100%",
+        "sub one",
+        "back",
+    ];
+    let got: Vec<&str> = s
+        .iter()
+        .map(String::as_str)
+        .filter(|l| !l.is_empty() && !l.starts_with("C:\\>"))
+        .collect();
+    assert_eq!(got, want, "{s:#?}");
+    assert_eq!(m.shell.errorlevel(), 3);
+    assert_eq!(count(&mut m), 1);
+}
+
+#[test]
+fn batch_from_autoexec_then_next_line_and_echo_on() {
+    let mut c = MemDrive::new();
+    c.add_file("\\T2.BAT", b"echo in bat\r\nrem nothing\r\n");
+    let mut m = boot(Some(c), &["t2", "echo after"]);
+    let s = screen(&mut m);
+    let pos = |w: &str| {
+        s.iter()
+            .position(|l| l == w)
+            .unwrap_or_else(|| panic!("{w}: {s:#?}"))
+    };
+    // Echo on: batch lines are shown after the prompt.
+    assert!(pos("C:\\>echo in bat") < pos("in bat"));
+    assert!(pos("C:\\>rem nothing") < pos("C:\\>echo after"));
+    assert!(pos("in bat") < pos("after"));
+}
+
+#[test]
+fn pause_waits_for_a_key() {
+    let mut c = MemDrive::new();
+    c.add_file("\\P.BAT", b"@echo off\r\npause\r\necho done\r\n");
+    let mut m = boot(Some(c), &["p"]);
+    assert!(has_line(&mut m, "Press any key to continue . . ."));
+    assert!(!has_line(&mut m, "done"));
+    type_line(&mut m, " ");
+    assert!(has_line(&mut m, "done"), "{:#?}", screen(&mut m));
+}

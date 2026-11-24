@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::{
-    Flow, Shell, Z, cwd_string, env_vars, error_text, find_file, get_env, out, outs, set_env,
+    Flow, Shell, State, Z, cwd_string, env_vars, error_text, find_file, get_env, out, outs, set_env,
 };
 use crate::bios::{bda, video};
 use crate::bus::Bus;
@@ -18,7 +18,7 @@ const GLUED: &[&str] = &["CD", "CHDIR", "ECHO"];
 
 /// Split a line into the command word and the rest (with its leading
 /// separator, as DOS passes command tails).
-fn split_command(line: &[u8]) -> (String, Vec<u8>) {
+pub(super) fn split_command(line: &[u8]) -> (String, Vec<u8>) {
     let line = line.trim_ascii();
     let end = line
         .iter()
@@ -44,7 +44,7 @@ fn split_command(line: &[u8]) -> (String, Vec<u8>) {
 }
 
 /// Arguments: whitespace-separated, double quotes group.
-fn args(rest: &[u8]) -> Vec<Vec<u8>> {
+pub(super) fn args(rest: &[u8]) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     let mut cur = Vec::new();
     let mut quoted = false;
@@ -65,7 +65,7 @@ fn args(rest: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
-fn latin1(b: &[u8]) -> String {
+pub(super) fn latin1(b: &[u8]) -> String {
     b.iter().map(|&c| c as char).collect()
 }
 
@@ -91,7 +91,23 @@ impl Shell {
                     outs(bus, "Invalid drive specification\n");
                 }
             }
-            "ECHO" => echo(bus, &rest),
+            "ECHO" => self.echo(bus, &rest),
+            "REM" => {}
+            "PAUSE" => {
+                outs(bus, "Press any key to continue . . .");
+                self.state = State::Pause;
+            }
+            "CHOICE" => self.choice(bus, &rest),
+            "GOTO" => self.goto(dos, bus, &a),
+            "SHIFT" => self.shift(),
+            "IF" => return self.if_cmd(dos, cpu, bus, &rest),
+            "FOR" => self.for_cmd(dos, bus, &rest),
+            "CALL" => {
+                self.calling = true;
+                let f = self.run(dos, cpu, bus, &rest);
+                self.calling = false;
+                return f;
+            }
             "CLS" => {
                 let mode = bda::read8(bus, bda::VIDEO_MODE) & 0x7F;
                 video::set_mode(bus, mode);
@@ -107,7 +123,7 @@ impl Shell {
                 dos.terminate(cpu, bus, 0, 0);
                 return Flow::Exit;
             }
-            _ => return run_program(dos, cpu, bus, &word, &rest),
+            _ => return self.run_program(dos, cpu, bus, &word, &rest),
         }
         Flow::Continue
     }
@@ -157,22 +173,6 @@ impl Shell {
                 None => outs(bus, "Usage: MOUNT [X path | -u X]\n"),
             },
             _ => outs(bus, "Usage: MOUNT [X path | -u X]\n"),
-        }
-    }
-}
-
-fn echo<B: Bus>(bus: &mut B, rest: &[u8]) {
-    match rest.first() {
-        None => outs(bus, "ECHO is on\n"),
-        Some(b'.') | Some(b'/') if rest.len() == 1 => out(bus, b"\n"),
-        Some(_) => {
-            let text = &rest[1..];
-            if text.trim_ascii().is_empty() && rest[0] != b'.' {
-                outs(bus, "ECHO is on\n");
-            } else {
-                out(bus, text);
-                out(bus, b"\n");
-            }
         }
     }
 }
@@ -411,54 +411,86 @@ fn path<B: Bus>(dos: &mut Dos, bus: &mut B, rest: &[u8]) {
     }
 }
 
-/// Find `word` (cwd, then PATH; `.COM`, `.EXE`, `.BAT`) and start it.
-fn run_program<B: Bus>(dos: &mut Dos, cpu: &mut Cpu, bus: &mut B, word: &str, rest: &[u8]) -> Flow {
-    let name = word.as_bytes();
-    let has_ext = name
-        .rsplit(|&c| c == b'\\' || c == b':')
-        .next()
-        .is_some_and(|last| last.contains(&b'.'));
-    let candidates = |base: &[u8]| -> Vec<Vec<u8>> {
-        if has_ext {
-            vec![base.to_vec()]
-        } else {
-            [&b".COM"[..], b".EXE", b".BAT"]
-                .iter()
-                .map(|e| [base, e].concat())
-                .collect()
+impl Shell {
+    fn echo<B: Bus>(&mut self, bus: &mut B, rest: &[u8]) {
+        let word = rest.trim_ascii();
+        if word.eq_ignore_ascii_case(b"ON") || word.eq_ignore_ascii_case(b"OFF") {
+            self.echo_on = word.eq_ignore_ascii_case(b"ON");
+            return;
         }
-    };
-    let mut dirs: Vec<Vec<u8>> = vec![Vec::new()];
-    if !name.iter().any(|&c| c == b'\\' || c == b':') {
-        if let Some(p) = get_env(dos, bus, "PATH") {
-            dirs.extend(p.split(';').filter(|d| !d.is_empty()).map(|d| {
-                let mut d = d.as_bytes().to_vec();
-                if !d.ends_with(b"\\") {
-                    d.push(b'\\');
-                }
-                d
-            }));
+        match rest.first() {
+            Some(b'.') | Some(b'/') | Some(b':') if rest.len() == 1 => out(bus, b"\n"),
+            Some(&c) if !word.is_empty() || c == b'.' => {
+                out(bus, &rest[1..]);
+                out(bus, b"\n");
+            }
+            _ => {
+                let state = if self.echo_on { "on" } else { "off" };
+                outs(bus, &format!("ECHO is {state}\n"));
+            }
         }
     }
-    let found = dirs.iter().find_map(|dir| {
-        candidates(&[dir.as_slice(), name].concat())
-            .into_iter()
-            .find(|c| find_file(dos, bus, c).is_some())
-    });
-    let Some(path) = found else {
-        outs(bus, "Bad command or file name\n");
-        return Flow::Continue;
-    };
-    if path.to_ascii_uppercase().ends_with(b".BAT") {
-        outs(bus, "Batch files are not supported yet\n");
-        return Flow::Continue;
-    }
-    let tail = latin1(rest);
-    match dos.exec(cpu, bus, &path, &ExecParams::from_tail(&tail)) {
-        Ok(()) => Flow::Started,
-        Err(e) => {
-            outs(bus, &format!("{}\n", error_text(e)));
-            Flow::Continue
+
+    /// Find `word` (cwd, then PATH; `.COM`, `.EXE`, `.BAT`) and start it.
+    fn run_program<B: Bus>(
+        &mut self,
+        dos: &mut Dos,
+        cpu: &mut Cpu,
+        bus: &mut B,
+        word: &str,
+        rest: &[u8],
+    ) -> Flow {
+        let name = word.as_bytes();
+        let has_ext = name
+            .rsplit(|&c| c == b'\\' || c == b':')
+            .next()
+            .is_some_and(|last| last.contains(&b'.'));
+        let candidates = |base: &[u8]| -> Vec<Vec<u8>> {
+            if has_ext {
+                vec![base.to_vec()]
+            } else {
+                [&b".COM"[..], b".EXE", b".BAT"]
+                    .iter()
+                    .map(|e| [base, e].concat())
+                    .collect()
+            }
+        };
+        let mut dirs: Vec<Vec<u8>> = vec![Vec::new()];
+        if !name.iter().any(|&c| c == b'\\' || c == b':') {
+            if let Some(p) = get_env(dos, bus, "PATH") {
+                dirs.extend(p.split(';').filter(|d| !d.is_empty()).map(|d| {
+                    let mut d = d.as_bytes().to_vec();
+                    if !d.ends_with(b"\\") {
+                        d.push(b'\\');
+                    }
+                    d
+                }));
+            }
+        }
+        let found = dirs.iter().find_map(|dir| {
+            candidates(&[dir.as_slice(), name].concat())
+                .into_iter()
+                .find(|c| find_file(dos, bus, c).is_some())
+        });
+        let Some(path) = found else {
+            outs(bus, "Bad command or file name\n");
+            return Flow::Continue;
+        };
+        if path.to_ascii_uppercase().ends_with(b".BAT") {
+            let (drive, file) = find_file(dos, bus, &path).expect("found above");
+            let mut argv = vec![word.as_bytes().to_vec()];
+            argv.extend(super::batch::batch_args(rest));
+            let call = std::mem::take(&mut self.calling);
+            self.start_batch(drive, file, argv, call);
+            return Flow::Continue;
+        }
+        let tail = latin1(rest);
+        match dos.exec(cpu, bus, &path, &ExecParams::from_tail(&tail)) {
+            Ok(()) => Flow::Started,
+            Err(e) => {
+                outs(bus, &format!("{}\n", error_text(e)));
+                Flow::Continue
+            }
         }
     }
 }

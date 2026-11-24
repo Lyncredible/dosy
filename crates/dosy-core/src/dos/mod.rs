@@ -245,6 +245,12 @@ impl Dos {
         self.set_dta(bus, root, psp::TAIL);
     }
 
+    /// Exit code of the last child (AL) and how it ended (AH), as INT 21h/4Dh
+    /// reports it, without clearing it.
+    pub fn return_code<B: Bus>(&self, bus: &mut B) -> u16 {
+        bus.read16(sda(SDA_RETURN_CODE))
+    }
+
     pub fn current_psp<B: Bus>(&self, bus: &mut B) -> u16 {
         bus.read16(sda(SDA_PSP))
     }
